@@ -84,6 +84,11 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ### Docs
 
+- Sync Phase 2 fair-accounting and packing guidance with upstream starter-kit
+  commit [`5eb9aa1`](https://github.com/AIcrowd/whest-starterkit/commit/5eb9aa1455fcb3216af55994bdf25dc242b95797).
+  Metering every operation does not permit packing independent values into one
+  machine element for an accounting advantage. Clarify that the official
+  Challenge Rules govern eligibility, not library pricing or a successful score.
 - Phase 2 content pass across `docs/` and `examples/`: every cost figure re-measured at
   1024 x 16 against whestbench 0.16.0 and flopscope 0.12.0 — and identical under flopscope
   0.11.0, since 0.12.0's repricing covers no operation these examples use. The bundled
