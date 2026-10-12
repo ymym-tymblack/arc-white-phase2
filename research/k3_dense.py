@@ -243,7 +243,7 @@ def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool, k4=None, k4b=None):
     omega = k4[0] if k4 is not None else None
     mu = corrected_raw_mean(c1, tdiag, use_tau, omega)
     m2 = corrected_raw_mean(c2, tdiag, use_tau, omega)
-    m3 = corrected_raw_mean(c3, tdiag, use_tau)
+    m3 = corrected_raw_mean(c3, tdiag, use_tau, omega)
     var = np.maximum(m2 - mu**2, 0.0)
     k3d = m3 - 3 * mu * m2 + 2 * mu**3
 
@@ -260,7 +260,7 @@ def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool, k4=None, k4b=None):
         return mu, C, None
 
     # Cov[h_i^2, h_k] → κ[h_i, h_i, h_k] = Cov(h_i²,h_k) - 2 μ_i C_ik
-    cov_sq = pair_cov(c2, c1, rho, t_iij, t_ijj, tdiag, tdiag, kmax, True)
+    cov_sq = pair_cov(c2, c1, rho, t_iij, t_ijj, tdiag, tdiag, kmax, True, k4)
     u_iik = cov_sq - 2.0 * mu[:, None] * C  # [i,k] = κ[h_i,h_i,h_k]
     U = third_distinct(c1, rho, tau3, emax, True)
     if k4b is not None:
@@ -292,8 +292,11 @@ def linear_step(W, mu, C, U):
     return m, S, T
 
 
-def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True, kap4=None, k4birth=None):
-    """各層の h の平均 μ (depth, n) を返す。K=2 (use_tau=False) は Mehler 共分散伝播。"""
+def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True, kap4=None, k4birth=None,
+              trace=None):
+    """各層の h の平均 μ (depth, n) を返す。K=2 (use_tau=False) は Mehler 共分散伝播。
+
+    trace にリストを渡すと、層ごとの (m, S, T, mu, C, U) を追加する(参照実装との照合用)。"""
     n = weights[0].shape[0]
     mu = np.zeros(n)
     C = np.eye(n)
@@ -303,5 +306,7 @@ def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True, kap4=
         m, S, T = linear_step(W.astype(np.float64), mu, C, U)
         mu, C, U = state_to_h(m, S, T, kmax, emax, use_tau, kap4[len(rows)] if kap4 else None,
                               k4birth[len(rows)] if k4birth else None)
+        if trace is not None:
+            trace.append((m, S, T, mu, C, U))
         rows.append(mu)
     return np.stack(rows)

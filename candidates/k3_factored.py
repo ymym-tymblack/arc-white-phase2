@@ -91,6 +91,16 @@ def _fit_windows(n: int, depth: int, budget: int, win_rho: int, win_iik: int,
     return win_rho, win_iik
 
 
+def _k4_pair(cA, cB, k4, R, kmax, rho):
+    """Cov[gA(z_i), gB(z_j)] への κ4 放射部分の寄与(i≠j)。k4 = (ω ベクトル, q qᵀ)。"""
+    om, k22 = k4
+    out = fnp.multiply(fnp.outer(cA[2], cB[2]), k22) * 0.25
+    for e in range(1, kmax + 1):
+        out = out + fnp.multiply(fnp.outer(cA[2 + e], cB[2 + e]), k22 * R[e]) * 0.25
+        out = out + (fnp.outer(cA[4 + e] * om, cB[e]) + fnp.outer(cA[e], cB[4 + e] * om)) * (R[e] / 24.0)
+    return out
+
+
 class Estimator(BaseEstimator):
     # 既定値は計画3改(research/search_k3.py、結果は results/search_k3*.json)で決めた。
     # 探索用 MLP は mini 0〜39 番(40 個)。縮小係数 calib は設定ごとに解析的に最適化し、
@@ -107,11 +117,14 @@ class Estimator(BaseEstimator):
     # 正しい値にする補正源を、何層分持つか(0 なら使わない)。生 MSE は下がるが、
     # FLOP の増加分を上回らず、どの探索でも window_iik=0 が最良または同点だった。
     window_iik = 0
+    # 参照実装との照合で見つけた抜け: κ4 の放射部分を共分散と同一添字の 3 次切り口にも入れる
+    k4_cov = False
     tau_scale = 0.94  # 3 次キュムラント(D3, D21)の倍率(理論値 1)
     # 最終層の出力に掛ける縮小係数。正解 ≈ (1 - calib) × 予測。
     # 9 特徴量の ridge(0.816)・GBM(0.83〜0.85)は、この 1 パラメータ補正を超えなかった(段階5)。
     calib = 5.09e-4
     collect = False  # True なら各層の内部量を self.features に残す(解析用。提出では使わない)
+    oracle = None  # 研究用: {層番号: {"D3", "D21", "omega"}} の真値を差し込む(提出では使わない)
 
     def __init__(
         self,
@@ -123,6 +136,8 @@ class Estimator(BaseEstimator):
         collect: bool | None = None,
         calib: float | None = None,
         window_iik: int | None = None,
+        oracle: dict | None = None,
+        k4_cov: bool | None = None,
     ) -> None:
         self._setup_rng = None
         if kmax is not None:
@@ -141,6 +156,9 @@ class Estimator(BaseEstimator):
             self.calib = calib
         if window_iik is not None:
             self.window_iik = window_iik
+        self.oracle = oracle
+        if k4_cov is not None:
+            self.k4_cov = k4_cov
         self.features = []
 
     def setup(self, ctx: SetupContext) -> None:
@@ -184,6 +202,13 @@ class Estimator(BaseEstimator):
                     APw = (A * P) * wq[None, :]
                     t = fnp.matmul(AAw, P.T) + 2.0 * fnp.matmul(APw, A.T)
                     D21 = t if D21 is None else D21 + t
+            if self.oracle is not None and layer in self.oracle:
+                # 研究用: 真値(GPU MC)を差し込み、どの量の誤差が効いているかを測る
+                o = self.oracle[layer]
+                if "D3" in o:
+                    D3 = fnp.asarray(o["D3"], dtype=f32)
+                if "D21" in o and D21 is not None:
+                    D21 = fnp.asarray(o["D21"], dtype=f32)
             D3_raw, D21_raw = D3, D21  # 源が表す値そのもの(倍率を掛ける前)
             if self.tau_scale != 1.0:
                 D3 = D3 * self.tau_scale
@@ -191,9 +216,11 @@ class Estimator(BaseEstimator):
                     D21 = D21 * self.tau_scale
             tdiag = D3 / (sigma * var)  # τ_iii = T_iii / σ³
             omega = (self.omega_scale * _omega_g(layer) / n) if self.use_omega else 0.0
+            if self.oracle is not None and layer in self.oracle and "omega" in self.oracle[layer]:
+                omega = fnp.asarray(self.oracle[layer]["omega"], dtype=f32)
 
             # --- Hermite 係数 (p=1) ---
-            top = max(kmax + 3, 6)
+            top = max(kmax + 4, 7)
             he = _hermite_neg_alpha(alpha, top)
             c = [m * Phi + sigma * phi, sigma * Phi]
             for k in range(2, top + 1):
@@ -218,6 +245,8 @@ class Estimator(BaseEstimator):
                 self.features.append({
                     "m": m, "sigma": sigma, "alpha": alpha, "tdiag": tdiag,
                     "mu": mu_new, "mu_gauss": c[0], "var_post": var_post,
+                    "D3": D3_raw,
+                    "D21": D21_raw if D21_raw is not None else fnp.zeros((n, n), dtype=f32),
                 })
             mu = mu_new
             rows.append(mu)
@@ -253,6 +282,16 @@ class Estimator(BaseEstimator):
                     fnp.outer(c[k + 3] * tdiag, c[k])
                     + fnp.outer(c[k], c[k + 3] * tdiag)
                 ) * R[k] / 6.0
+            # κ4 の放射部分(参照実装の K=3 SIMPLE と同じ構造): 標準化した κ4 を
+            #   κ̃4_iiii = ω_i,  κ̃4_iijj = q_i q_j(q = √(ω/3)、i≠j)
+            # と置き、4 本ブロック 1 個の図を足す(a 本を i、b 本を j、残り e 本は ρ の辺):
+            #   c_{a+e}(i) c_{b+e}(j) κ̃ ρ^e/(a! b! e!)、(a,b) = (2,2), (4,0), (0,4)
+            k4 = None
+            if self.k4_cov and self.use_omega:
+                om = omega * fnp.ones_like(sigma) if isinstance(omega, float) else omega
+                q = fnp.sqrt(om / 3.0)
+                k4 = (om, fnp.outer(q, q))
+                Cn = Cn + _k4_pair(c, c, k4, R, kmax, rho)
             fnp.fill_diagonal(Cn, var_post)
             C = flops.as_symmetric(Cn, symmetry=(0, 1))
 
@@ -265,7 +304,7 @@ class Estimator(BaseEstimator):
             if win_iik > 0:
                 # p=2(h²)の Hermite 係数: k=0..kmax+3
                 c2p = [e2_0, 2.0 * sigma * c[0], 2.0 * var * Phi]
-                for k in range(3, kmax + 4):
+                for k in range(3, kmax + 5):
                     c2p.append(2.0 * var * phi * he[k - 3])
                 cov_sq = fnp.multiply(fnp.outer(c2p[1], c[1]), R[1])
                 for k in range(2, kmax + 1):
@@ -283,12 +322,16 @@ class Estimator(BaseEstimator):
                         fnp.outer(c2p[k + 3] * tdiag, c[k])
                         + fnp.outer(c2p[k], c[k + 3] * tdiag)
                     ) * R[k] / 6.0
+                if k4 is not None:
+                    cov_sq = cov_sq + _k4_pair(c2p, c, k4, R, kmax, rho)
                 u = cov_sq - 2.0 * mu[:, None] * Cn
                 # E[h³](τ 補正込み)と 3 次キュムラントの対角
                 e3_0 = m * e2_0 + 2.0 * var * c[0]
                 e3_3 = 6.0 * var * sigma * Phi
                 e3_6 = 6.0 * var * sigma * phi * he[2]
                 ez3 = e3_0 + e3_3 * tdiag / 6.0 + e3_6 * tdiag * tdiag / 72.0
+                if k4 is not None:
+                    ez3 = ez3 + 6.0 * var * sigma * phi * (k4[0] / 24.0)
                 k3d = ez3 - 3.0 * mu * ez2 + 2.0 * mu * mu * mu
                 # 源が表している値(誕生: 2 c1_i c2_i c1_k ρ_ik + c1_i² c2_k ρ_ik²、
                 # 輸送: Φ_i² Φ_k T_iik)
