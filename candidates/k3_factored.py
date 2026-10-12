@@ -83,13 +83,38 @@ def _max_live_sources(n: int, depth: int, budget: int, margin: float = 0.85) -> 
 class Estimator(BaseEstimator):
     kmax = 3  # Mehler 展開の次数(共分散)
     use_omega = True  # κ4 対角(超過尖度)の平均・分散補正
+    # 段階4: Optuna(TPE)で mini の 12 MLP 上を 30 試行探索し、別の 28 MLP で検証した値。
+    #   検証 28 MLP の調整後スコア: 既定(window=16, 倍率1.0) 1.34e-7 → 下記 9.3e-8
+    # 倍率は理論値が 1 だが、τ は 1.14 付近が最良だった(古い源を捨てた分の補償を含む
+    # 可能性があり、MLP 形状が変われば再調整が必要)。
+    omega_scale = 1.05  # ω の全体倍率(理論値 1)
+    window = 7  # 同時に保持する源の上限(古い源を捨てて FLOP を減らす)
+    tau_scale = 1.14  # 3 次キュムラント(D3, D21)の倍率(理論値 1)
+    collect = False  # True なら各層の内部量を self.features に残す(解析用。提出では使わない)
 
-    def __init__(self, kmax: int | None = None, use_omega: bool | None = None) -> None:
+    def __init__(
+        self,
+        kmax: int | None = None,
+        use_omega: bool | None = None,
+        omega_scale: float | None = None,
+        window: int | None = None,
+        tau_scale: float | None = None,
+        collect: bool | None = None,
+    ) -> None:
         self._setup_rng = None
         if kmax is not None:
             self.kmax = kmax
         if use_omega is not None:
             self.use_omega = use_omega
+        if omega_scale is not None:
+            self.omega_scale = omega_scale
+        if window is not None:
+            self.window = window
+        if tau_scale is not None:
+            self.tau_scale = tau_scale
+        if collect is not None:
+            self.collect = collect
+        self.features = []
 
     def setup(self, ctx: SetupContext) -> None:
         self._setup_rng = fnp.random.default_rng(ctx.seed)
@@ -99,6 +124,8 @@ class Estimator(BaseEstimator):
         n = mlp.width
         depth = mlp.depth
         max_live = _max_live_sources(n, depth, budget)
+        if self.window is not None:
+            max_live = min(max_live, self.window)
         kmax = self.kmax
         f32 = fnp.float32
 
@@ -130,8 +157,12 @@ class Estimator(BaseEstimator):
                     APw = (A * P) * wq[None, :]
                     t = fnp.matmul(AAw, P.T) + 2.0 * fnp.matmul(APw, A.T)
                     D21 = t if D21 is None else D21 + t
+            if self.tau_scale != 1.0:
+                D3 = D3 * self.tau_scale
+                if D21 is not None:
+                    D21 = D21 * self.tau_scale
             tdiag = D3 / (sigma * var)  # τ_iii = T_iii / σ³
-            omega = (_omega_g(layer) / n) if self.use_omega else 0.0
+            omega = (self.omega_scale * _omega_g(layer) / n) if self.use_omega else 0.0
 
             # --- Hermite 係数 (p=1) ---
             top = max(kmax + 3, 6)
@@ -155,6 +186,11 @@ class Estimator(BaseEstimator):
                 + e2_4 * (omega / 24.0)
             )
             var_post = fnp.maximum(ez2 - mu_new * mu_new, 0.0)
+            if self.collect:
+                self.features.append({
+                    "m": m, "sigma": sigma, "alpha": alpha, "tdiag": tdiag,
+                    "mu": mu_new, "mu_gauss": c[0], "var_post": var_post,
+                })
             mu = mu_new
             rows.append(mu)
             if last:
