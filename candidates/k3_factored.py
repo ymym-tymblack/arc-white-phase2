@@ -90,6 +90,10 @@ class Estimator(BaseEstimator):
     omega_scale = 1.05  # ω の全体倍率(理論値 1)
     window = 7  # 同時に保持する源の上限(古い源を捨てて FLOP を減らす)
     tau_scale = 1.14  # 3 次キュムラント(D3, D21)の倍率(理論値 1)
+    # 段階5: 最終層の出力に掛ける縮小係数。mini 100 MLP で 正解 ≈ (1 - 2.37e-4) × 予測
+    # (予測値と残差の相関 -0.31、1 パラメータ補正で 5 分割 CV の MSE が 0.825 倍)。
+    # 9 特徴量の ridge(0.816)・GBM(0.83〜0.85)は 1 パラメータ補正を超えなかった。
+    calib = 2.37e-4
     collect = False  # True なら各層の内部量を self.features に残す(解析用。提出では使わない)
 
     def __init__(
@@ -100,6 +104,7 @@ class Estimator(BaseEstimator):
         window: int | None = None,
         tau_scale: float | None = None,
         collect: bool | None = None,
+        calib: float | None = None,
     ) -> None:
         self._setup_rng = None
         if kmax is not None:
@@ -114,6 +119,8 @@ class Estimator(BaseEstimator):
             self.tau_scale = tau_scale
         if collect is not None:
             self.collect = collect
+        if calib is not None:
+            self.calib = calib
         self.features = []
 
     def setup(self, ctx: SetupContext) -> None:
@@ -242,4 +249,6 @@ class Estimator(BaseEstimator):
             moved.append([fnp.matmul(wT, c[1][:, None] * rho), wT, c[2]])
             sources = moved[-max_live:] if max_live else []
 
+        if self.calib:
+            rows[-1] = rows[-1] * (1.0 - self.calib)
         return fnp.stack(rows, axis=0)
