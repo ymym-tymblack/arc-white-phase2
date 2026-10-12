@@ -92,24 +92,25 @@ def _fit_windows(n: int, depth: int, budget: int, win_rho: int, win_iik: int,
 
 
 class Estimator(BaseEstimator):
-    # 既定値は計画3(research/tune_k3_v2.py、結果は results/tune_k3_v2.json)で決めた。
-    # 探索用 MLP(mini 0〜11)で貪欲法(座標降下)→ TPE 30 試行、上位を検証用(12〜39)で比較。
-    #   検証 28 MLP の調整後スコア: 計画3 開始時 6.79e-8 → 採用値 6.06e-8
-    # 検証で最良だった window_iik=1 の設定(6.05e-8)とは差 0.1% で区別できないため、
-    # FLOP と residual 時間が小さい(0.17 s 対 0.28 s)window_iik=0 の設定を採用した。
+    # 既定値は計画3改(research/search_k3.py、結果は results/search_k3*.json)で決めた。
+    # 探索用 MLP は mini 0〜39 番(40 個)。縮小係数 calib は設定ごとに解析的に最適化し、
+    # 残り 5 変数を焼きなまし法(25 反復)→ ビームサーチ(幅 2、収束まで)で探索した。
+    #   探索用 40 MLP: 6.06e-8 → 5.79e-8(前半 20 個・後半 20 個とも改善)
+    #   最終確認用 60 MLP(40〜99 番、探索に不使用): 5.88e-8 → 5.47e-8
+    # τ を下げて calib を上げる方向に改善が続き、τ=0.94 で止まった(0.92 は悪化)。
     # 倍率は理論値 1 からの当てはめで、MLP の形状が変われば再調整が必要。
     kmax = 2  # Mehler 展開の次数(共分散)
     use_omega = True  # κ4 対角(超過尖度)の平均・分散補正
-    omega_scale = 0.871  # ω の全体倍率(理論値 1)
+    omega_scale = 0.8  # ω の全体倍率(理論値 1)
     window = 7  # 誕生した源を何層分持つか(古い源を捨てて FLOP を減らす)
     # 計画1: 同じニューロンが 2 回現れる 3 次の切り口 κ[h_i,h_i,h_k] と κ[h_i,h_i,h_i] を
     # 正しい値にする補正源を、何層分持つか(0 なら使わない)。生 MSE は下がるが、
-    # FLOP の増加分を上回らず、調整後スコアでは採用値と差がなかった。
+    # FLOP の増加分を上回らず、どの探索でも window_iik=0 が最良または同点だった。
     window_iik = 0
-    tau_scale = 1.026  # 3 次キュムラント(D3, D21)の倍率(理論値 1)
+    tau_scale = 0.94  # 3 次キュムラント(D3, D21)の倍率(理論値 1)
     # 最終層の出力に掛ける縮小係数。正解 ≈ (1 - calib) × 予測。
     # 9 特徴量の ridge(0.816)・GBM(0.83〜0.85)は、この 1 パラメータ補正を超えなかった(段階5)。
-    calib = 3.41e-4
+    calib = 5.09e-4
     collect = False  # True なら各層の内部量を self.features に残す(解析用。提出では使わない)
 
     def __init__(

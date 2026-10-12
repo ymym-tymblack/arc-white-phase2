@@ -26,7 +26,8 @@ GRID = {
     "window": [5, 6, 7, 8, 9, 10],
     "window_iik": [0, 1, 2],
     "kmax": [2, 3, 4],
-    "tau_scale": [round(0.94 + 0.02 * i, 2) for i in range(14)],  # 0.94〜1.20
+    # 1 回目の探索で下限 0.94 の近くまで改善が続いたため、下限を 0.80 に広げた
+    "tau_scale": [round(0.80 + 0.02 * i, 2) for i in range(21)],  # 0.80〜1.20
     "omega_scale": [round(0.5 + 0.1 * i, 1) for i in range(10)],  # 0.5〜1.4
 }
 START = dict(window=7, window_iik=0, kmax=2, tau_scale=1.02, omega_scale=0.9)
@@ -121,12 +122,22 @@ def beam(f: Objective, starts: list[dict], width: int, iters: int):
 def main():
     sa_steps = int(sys.argv[1]) if len(sys.argv) > 1 else 30
     width = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+    resume = len(sys.argv) > 3 and sys.argv[3] == "resume"
     f = Objective()
-    print("== 焼きなまし法 ==", flush=True)
-    sa_best, _ = anneal(f, START, sa_steps)
+    if resume:
+        # 前回の評価結果を読み込み、SA を省いてビームサーチだけを続ける
+        for e in json.loads(OUT.read_text())["log"]:
+            f.cache[json.dumps(e["x"], sort_keys=True)] = e
+        f(START)
+        sa_best = min(f.cache.values(), key=lambda e: e["adj"])["x"]
+        iters = 6
+    else:
+        print("== 焼きなまし法 ==", flush=True)
+        sa_best, _ = anneal(f, START, sa_steps)
+        iters = 3
     print("== ビームサーチ ==", flush=True)
     top = sorted(f.cache.values(), key=lambda e: e["adj"] if e["resid"] < RESID_LIMIT else 1.0)
-    final = beam(f, [sa_best] + [e["x"] for e in top[:width]], width, iters=3)
+    final = beam(f, [sa_best] + [e["x"] for e in top[:width]], width, iters=iters)
     choice = f.cache[json.dumps(final[0], sort_keys=True)]
     start = f.cache[json.dumps(START, sort_keys=True)]
     print(f"開始点: {start}", flush=True)

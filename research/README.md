@@ -19,7 +19,8 @@ uv run whest package --estimator candidates/k3_factored.py --output submission.t
 | + κ4 対角(段階3) | 3 MLP | 3.6e-7 | 0.449 | 1.6e-7 |
 | + 探索した window/倍率(段階4) | 検証 28 | 2.7e-7 | 0.340 | 9.3e-8 |
 | 段階5 の既定(縮小係数あり) | 最終確認 60 | 2.24e-7 | 0.324 | 7.26e-8 |
-| **計画3 の既定(現在)** | **最終確認 60** | **1.82e-7** | **0.324** | **5.88e-8** |
+| 計画3 の既定 | 最終確認 60 | 1.82e-7 | 0.324 | 5.88e-8 |
+| **計画3改の既定(現在、SA→ビームサーチ)** | **最終確認 60** | **1.69e-7** | **0.324** | **5.47e-8** |
 
 1 スレッドで 1 MLP 約 9 s、residual 0.10 s、最大メモリ 0.39 GB(`research/preflight.py`)。
 
@@ -32,6 +33,12 @@ uv run whest package --estimator candidates/k3_factored.py --output submission.t
 | 2 | κ4[z_i,z_j,z_k,z_k] を 3 次の誕生に反映 | ρ_ikρ_jk 比例の R² 0.03〜0.38、真の値の注入でも 1.15 倍悪化 → 不採用 |
 | 3 | 窓・倍率・縮小係数・kmax を貪欲法 → TPE で探索 | 検証 28 MLP で 6.79e-8 → 6.06e-8、最終確認 60 MLP で 7.26e-8 → 5.88e-8 |
 | 4 | 形状(1024×16/24/32、256×8/32)、FLOP、時間、residual、メモリ、公式ランナー | すべて上限内 |
+| 3改 | 探索用を 40 MLP に拡大、calib を解析的に最適化、焼きなまし法 → ビームサーチ | 探索用 6.06e-8 → 5.79e-8、最終確認用 5.88e-8 → 5.47e-8 |
+
+評価分割の感度(`research/split_sensitivity.py`): 旧/新 2 設定を 100 MLP で評価し、ランダムな分割
+5000 通りで改善率を測ると、12 個で 0.812 ± 0.026、60 個で 0.812 ± 0.008(95% 区間)。改善は分割の
+選び方に依らず、全 100 MLP で新設定が良かった。分割そのものを最適化すると、最終確認用の値が
+本番より楽観的になるだけなので行わない。
 
 副次効果: 窓の外に出る源を輸送前に捨てるよう直し、C/B が 0.340 → 0.324 に下がった(精度は同じ)。
 
@@ -45,7 +52,8 @@ uv run whest package --estimator candidates/k3_factored.py --output submission.t
 | `candidates/k3_factored.py` | 因子化版(提出用)。密版の最小構成 {rho, tau1, pairtau, meantau} と一致 |
 | `research/check_factored.py`, `check_factored_iik.py` | 因子化版と密版の一致確認(最大差 8e-7、iik あり 7e-7) |
 | `research/eval_mini.py`, `scan.py` | mini 上の並列評価ハーネス(公式スコアと同じ式)と設定の一括評価 |
-| `research/tune_k3.py`, `tune_k3_v2.py` | 段階4の TPE 探索、計画3の貪欲法 → TPE 探索 |
+| `research/tune_k3.py`, `tune_k3_v2.py`, `search_k3.py` | 段階4の TPE、計画3の貪欲法 → TPE、計画3改の焼きなまし法 → ビームサーチ |
+| `research/split_sensitivity.py` | 評価分割の選び方で改善率がどれだけ揺れるか |
 | `research/preflight.py` | 提出前の安全確認(形状・FLOP・時間・residual・メモリ) |
 | `research/stage5_collect.py`, `stage5_analyze.py` | 学習補正の有効性検証 |
 | `scripts/measure_layer_error.py`, `measure_nongaussian.py` | 層別誤差・非ガウス性の測定 |
