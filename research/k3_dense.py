@@ -26,6 +26,9 @@ import numpy as np
 
 _erf = np.vectorize(math.erf)
 
+# 研究用: どの項を使うかの切替(アブレーション用)。既定は全部有効。
+GROUPS = {"rho", "tau1", "tau1e", "txxy", "txxx", "pairtau", "meantau", "iik", "iii"}
+
 
 def ncdf(x):
     return 0.5 * (1.0 + _erf(x / math.sqrt(2.0)))
@@ -98,7 +101,7 @@ def pair_cov(cA, cB, rho, t_iij, t_ijj, t_iii, t_jjj, kmax: int, use_tau: bool =
     tot = np.zeros_like(rho)
     for k in range(1, kmax + 1):
         tot += np.outer(cA[k], cB[k]) * R[k]
-    if not use_tau:
+    if not use_tau or "pairtau" not in GROUPS:
         return tot
     for k in range(2, kmax + 1):
         tot += np.outer(cA[k], cB[k - 1]) * t_iij * R[k - 2] / 2.0
@@ -112,7 +115,7 @@ def pair_cov(cA, cB, rho, t_iij, t_ijj, t_iii, t_jjj, kmax: int, use_tau: bool =
 def corrected_raw_mean(c, tau_diag, use_tau: bool = True):
     """E[g(Y_i)] = c_0 + c_3 τ/6 + c_6 τ²/72 (単一頂点: 3 本ブロックのみ)。"""
     out = c[0].copy()
-    if use_tau:
+    if use_tau and "meantau" in GROUPS:
         out += c[3] * tau_diag / 6.0 + c[6] * tau_diag**2 / 72.0
     return out
 
@@ -164,7 +167,7 @@ def third_distinct(c1, rho, tau3, emax: int, use_tau: bool = True):
             continue
         nz = sum(x > 0 for x in (e01, e02, e12))
         E = None
-        if nz >= 2:
+        if nz >= 2 and "rho" in GROUPS:
             c = coef((e01 + e02, e01 + e12, e02 + e12))
             if c is not None:
                 E = edges(e01, e02, e12)
@@ -173,7 +176,8 @@ def third_distinct(c1, rho, tau3, emax: int, use_tau: bool = True):
             continue
         # τ_ijk
         c = coef((1 + e01 + e02, 1 + e01 + e12, 1 + e02 + e12))
-        if c is not None:
+        use_t1 = "tau1" in GROUPS if (e01 + e02 + e12) == 0 else "tau1e" in GROUPS
+        if c is not None and use_t1:
             E = edges(e01, e02, e12)
             U += c * tau3 * E
         # τ_xxy: (x, y, z) は軸の置換
@@ -181,7 +185,7 @@ def third_distinct(c1, rho, tau3, emax: int, use_tau: bool = True):
             exy = {(0, 1): e01, (0, 2): e02, (1, 2): e12}[tuple(sorted((x, y)))]
             exz = {(0, 1): e01, (0, 2): e02, (1, 2): e12}[tuple(sorted((x, z)))]
             eyz = {(0, 1): e01, (0, 2): e02, (1, 2): e12}[tuple(sorted((y, z)))]
-            if exz + eyz < 1:
+            if exz + eyz < 1 or "txxy" not in GROUPS:
                 continue
             deg = [0, 0, 0]
             deg[x], deg[y], deg[z] = 2 + exy + exz, 1 + exy + eyz, exz + eyz
@@ -198,7 +202,7 @@ def third_distinct(c1, rho, tau3, emax: int, use_tau: bool = True):
             eyz = {(0, 1): e01, (0, 2): e02, (1, 2): e12}[tuple(sorted((y, z)))]
             conn_y = exy > 0 or (eyz > 0 and exz > 0)
             conn_z = exz > 0 or (eyz > 0 and exy > 0)
-            if not (conn_y and conn_z):
+            if not (conn_y and conn_z) or "txxx" not in GROUPS:
                 continue
             deg = [0, 0, 0]
             deg[x], deg[y], deg[z] = 3 + exy + exz, exy + eyz, exz + eyz
@@ -246,10 +250,12 @@ def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool):
     u_iik = cov_sq - 2.0 * mu[:, None] * C  # [i,k] = κ[h_i,h_i,h_k]
     U = third_distinct(c1, rho, tau3, emax, True)
     for i in range(n):
-        U[i, i, :] = u_iik[i]
-        U[i, :, i] = u_iik[i]
-        U[:, i, i] = u_iik[i]
-        U[i, i, i] = k3d[i]
+        if "iik" in GROUPS:
+            U[i, i, :] = u_iik[i]
+            U[i, :, i] = u_iik[i]
+            U[:, i, i] = u_iik[i]
+        if "iii" in GROUPS:
+            U[i, i, i] = k3d[i]
     return mu, C, U
 
 
