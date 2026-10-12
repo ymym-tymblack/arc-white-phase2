@@ -71,6 +71,14 @@ def _run(args):
                 layers=((pred - truth) ** 2).mean(1).tolist())
 
 
+# 計画0 で固定した評価分割(mini の MLP 番号)。最終確認用は当てはめに使わない。
+SPLITS = {
+    "tune": list(range(0, 12)),
+    "valid": list(range(12, 40)),
+    "test": list(range(40, 100)),
+}
+
+
 class Evaluator:
     def __init__(self, idxs, workers: int = 4, threads: int = 8):
         self.idxs = list(idxs)
