@@ -12,7 +12,7 @@ from ablate_k3 import mc_means  # noqa: E402
 from local_engine import build_mlp  # noqa: E402
 from measure_layer_error import run_estimator  # noqa: E402
 
-spec = importlib.util.spec_from_file_location("k3f", "candidates/k3_factored.py")
+spec = importlib.util.spec_from_file_location("k3f", "research/archive/k3_factored_v1.py")
 mod = importlib.util.module_from_spec(spec)
 sys.modules["k3f"] = mod
 spec.loader.exec_module(mod)

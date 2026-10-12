@@ -30,7 +30,7 @@ from whestbench import SetupContext  # noqa: E402
 
 from local_engine import build_mlp  # noqa: E402
 
-PATH = ROOT / "candidates/k3_factored.py"
+PATH = ROOT / (sys.argv[1] if len(sys.argv) > 1 else "candidates/k3_factored.py")
 B = 2**41
 
 

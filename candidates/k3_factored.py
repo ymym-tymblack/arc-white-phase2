@@ -1,26 +1,26 @@
-"""因子化 K=3 キュムラント伝播(提出用 flopscope 実装)。
+"""因子化 K=3 キュムラント伝播(源を「家族」にまとめた版)。提出用、flopscope のみ。
 
-research/k3_dense.py(密テンソル版・n=128 で MC 検証済み)の最小構成
-  {rho, tau1, pairtau, meantau}
-を n=1024 向けに因子化したもの。密版で必要と確認した項だけを持つ。
+前の版(research/archive/k3_factored_v1.py)から変えた点。いずれも ARC の公式参照実装(mlp_kprop, K=3 SIMPLE)と
+RTX 5090 上の MC 真値との層別照合で見つけた抜けを埋めるもの(research/README.md)。
 
-状態:
-  mu_h, C : 前層 ReLU 後の平均と共分散
-  sources : 事前活性化 z の 3 次キュムラント T を、源 b ごとの和で持つ
-        T_abc = Σ_b Σ_q w_b[q] ( A_b[a,q] A_b[b,q] P_b[c,q] + (P を他の位置に置いた 2 通り) )
-    A, P は n×n。w は長さ n。
-  読み出し:
-        D3[a]    = T_aaa = 3 Σ_q w_q A_aq² P_aq
-        D21[a,b] = T_aab = (A∘A·w) Pᵀ + 2 (A∘P·w) Aᵀ     (n³ の行列積 2 回)
-    ReLU は D3(平均補正)と D21(共分散補正)だけを読む。
-  輸送(ReLU の傾き gain=Φ(α) と次層の重み W を通す):
-        A ← Wᵀ diag(gain) A,   P ← Wᵀ diag(gain) P
-  誕生(ReLU 後の共分散 ρ から。密版の rho 項 c1(i) c1(j) c2(k) ρ_ik ρ_jk に対応):
-        A = Wᵀ diag(c1) ρ,  P = Wᵀ,  w = c2
-    ここで c1 = Hermite 係数 c_1 = σΦ(α)、c2 = c_2 = σφ(α)。
+1. κ4 の放射部分を、平均・分散だけでなく共分散と「同じ添字が現れる 3 次の切り口」にも入れる。
+   参照実装と同じく標準化した κ4 を κ̃4_iiii = ω、κ̃4_iijj = ω/3(i≠j)と置く。
+2. 同一添字の 3 次切り口 κ[h_i,h_i,h_k](と κ3[h_i])を正しい値に直す補正 Δ を、
+   各層で生まれる源と同じ「家族」に入れて運ぶ。Δ は
+       Δ ≈ diag(e) (ρ ∘ 1 c1ᵀ) + Q B(低ランク) + 対角
+   と分けられ(主要項は誕生源の脚 A と同じ形)、別の密な脚を運ばずに済む。
 
-k 次 Hermite 係数 (p=1): c_0 = μΦ+σφ, c_1 = σΦ, c_k = σφ He_{k-2}(-α) (k≥2)
-p=2 の係数(分散用): c_0 = E[z²;z>0], c_3 = 2σ²φ, c_6 = 2σ²φ He_3(-α)
+家族 f(層 b で誕生)が表す、層 l の事前活性化 z の 3 次キュムラント:
+    T_abc = Σ_q c2_q Sym(A A M)_{abc,q} + Σ_q Sym(M M PΔ)_{abc,q}
+    Sym(XXY)_{abc,q} = X_aq X_bq Y_cq + X_aq Y_bq X_cq + Y_aq X_bq X_cq
+    PΔ = A diag(e) + M diag(dd) + Z Qᵀ
+  M は伝播行列(誕生時 Wᵀ)、A = M diag(c1) ρ、Z は n×r の細い脚、Q・e・dd・c2 は誕生時に固定。
+  輸送は X ← Wᵀ diag(Φ(α)) X(X = A, M, Z)。ReLU が読むのは
+    D3_a  = T_aaa = 3 Σ_q (c2 A² M + M² PΔ)_aq
+    D21   = T_aab = X_M Mᵀ + X_A Aᵀ + ((M∘M) Q) Zᵀ
+            X_M = (A∘A) diag(c2) + (M∘M) diag(dd) + 2 (M∘PΔ)
+            X_A = 2 (A∘M) diag(c2) + (M∘M) diag(e)
+  家族 1 つ・1 層あたりの密な行列積は 4 回(輸送 2 + 読み出し 2)で、補正なしの源と同じ。
 """
 
 from __future__ import annotations
@@ -32,20 +32,9 @@ import flopscope.numpy as fnp
 from whestbench import BaseEstimator, SetupContext
 from whestbench.domain import MLP
 
-
-def _hermite_neg_alpha(alpha, upto: int):
-    """He_0..He_upto(-alpha) のリスト(float32 ベクトル)。"""
-    x = -alpha
-    out = [fnp.ones_like(x), x]
-    for j in range(1, upto):
-        out.append(x * out[j] - float(j) * out[j - 1])
-    return out[: upto + 1]
-
-
-# 事前活性化 z の超過尖度の層平均 ω_ℓ ≈ G[ℓ] / n (ℓ=0..15 は 1〜16 層目)。
-# 値は幅1024・16層の MLP 3 個の MC 実測(results/layer_error.json の kurt × 1024)。
-# 幅128でも G/n が実測と一致することを確認済み(ω は 1/n に比例)。
-# 16 層より深い場合は最後の傾き 約1.8/層 で外挿する。
+# 事前活性化 z の超過尖度の層平均 ω_ℓ ≈ G[ℓ] / n(ℓ=0..15 は 1〜16 層目)。
+# 幅1024・16層の MLP 3 個の MC 実測(results/layer_error.json の kurt × 1024)。
+# 参照実装が解析的に出す層平均とも 2〜15% で一致する。16 層より深い場合は 約1.8/層で外挿。
 _OMEGA_G = (
     0.05, 9.9, 16.94, 21.82, 26.71, 31.42, 35.48, 39.19,
     42.84, 45.89, 49.41, 52.42, 55.03, 58.67, 60.49, 62.31,
@@ -58,107 +47,85 @@ def _omega_g(layer: int) -> float:
     return _OMEGA_G[-1] + 1.8 * (layer - len(_OMEGA_G) + 1)
 
 
-def _estimate_flops(n: int, depth: int, win_rho: int, win_iik: int) -> float:
+def _hermite_neg_alpha(alpha, upto: int):
+    """He_0..He_upto(-alpha) のリスト。"""
+    x = -alpha
+    out = [fnp.ones_like(x), x]
+    for j in range(1, upto):
+        out.append(x * out[j] - float(j) * out[j - 1])
+    return out[: upto + 1]
+
+
+def _estimate_flops(n: int, depth: int, window: int, rank: int) -> float:
     """解析的な FLOP 見積り(行列積 1 回 = 2 n³)。少し多めに見積もる。
 
-    層ごとの基本コスト ≈ 共分散のサンドイッチ 3.22e9 (n/1024)³ + 誕生の行列積 2 n³
-                          (+ iik 源の誕生 2 n³)
-    源 1 個・1 層あたり  ≈ 8 n³(輸送 2 回 + 読み出し 2 回)
+    層ごと: 共分散のサンドイッチ 3.22e9 (n/1024)³ + 誕生 2 n³ + 補正の低ランク化 ≈ 12 n² r
+    家族 1 つ・1 層あたり: 8 n³(輸送 2 + 読み出し 2)+ 細い脚 ≈ 10 n² r
     """
     n3 = float(n) ** 3
-    base = 3.22e9 * (n / 1024.0) ** 3 + 2.0 * n3 + (2.0 * n3 if win_iik > 0 else 0.0)
+    base = 3.22e9 * (n / 1024.0) ** 3 + 2.0 * n3 + 12.0 * n * n * rank
     total = 0.0
     for layer in range(depth):
-        live = min(layer, win_rho) + min(layer, win_iik)
-        total += base + 8.0 * n3 * live
+        total += base + (8.0 * n3 + 10.0 * n * n * rank) * min(layer, window)
     return total
 
 
-def _fit_windows(n: int, depth: int, budget: int, win_rho: int, win_iik: int,
-                 margin: float = 0.85) -> tuple[int, int]:
-    """予算を超えないよう、大きい方の窓から 1 ずつ縮める。
+def _fit_window(n: int, depth: int, budget: int, window: int, rank: int,
+                margin: float = 0.85) -> int:
+    """予算を超えないよう窓を縮める(超えるとその MLP の予測はゼロになり、割引もない)。"""
+    while window > 0 and _estimate_flops(n, depth, window, rank) > margin * budget:
+        window -= 1
+    return window
 
-    FLOP が予算を超えると、その MLP の予測はゼロに置き換わる(割引もなし)。
-    競技の形状(1024×16)では縮めないが、深い MLP(スモークテストなど)で効く。
+
+def _pair_terms(cA, cB, R, kmax, t_iij, t_ijj, tdiag, k4):
+    """Cov[gA(z_i), gB(z_j)](i≠j)を Hermite 係数で展開した和。
+
+    ρ の辺だけ: Σ_k cA_k cB_k ρ^k/k!
+    3 次ブロック 1 個: (cA_k cB_{k-1} τ_iij + cA_{k-1} cB_k τ_ijj) ρ^{k-2}/(2 (k-2)!)
+                      + (cA_{k+3} τ_iii cB_k + cA_k cB_{k+3} τ_jjj) ρ^k/(6 k!)
+    κ4 放射ブロック 1 個: cA_{2+e} cB_{2+e} q_i q_j ρ^e/(4 e!) + (cA_{4+e} ω_i cB_e + 対称) ρ^e/(24 e!)
     """
-    while _estimate_flops(n, depth, win_rho, win_iik) > margin * budget:
-        if win_rho == 0 and win_iik == 0:
-            break
-        if win_iik >= win_rho and win_iik > 0:
-            win_iik -= 1
-        else:
-            win_rho -= 1
-    return win_rho, win_iik
-
-
-def _k4_pair(cA, cB, k4, R, kmax, rho):
-    """Cov[gA(z_i), gB(z_j)] への κ4 放射部分の寄与(i≠j)。k4 = (ω ベクトル, q qᵀ)。"""
-    om, k22 = k4
-    out = fnp.multiply(fnp.outer(cA[2], cB[2]), k22) * 0.25
-    for e in range(1, kmax + 1):
-        out = out + fnp.multiply(fnp.outer(cA[2 + e], cB[2 + e]), k22 * R[e]) * 0.25
-        out = out + (fnp.outer(cA[4 + e] * om, cB[e]) + fnp.outer(cA[e], cB[4 + e] * om)) * (R[e] / 24.0)
+    out = fnp.multiply(fnp.outer(cA[1], cB[1]), R[1])
+    for k in range(2, kmax + 1):
+        out = out + fnp.multiply(fnp.outer(cA[k], cB[k]), R[k])
+    if t_iij is not None:
+        for k in range(2, kmax + 1):
+            Rk2 = R[0] if k == 2 else R[k - 2]
+            out = out + fnp.multiply(
+                fnp.outer(cA[k], cB[k - 1]) * t_iij + fnp.outer(cA[k - 1], cB[k]) * t_ijj, Rk2
+            ) * 0.5
+    for k in range(1, kmax + 1):
+        out = out + (fnp.outer(cA[k + 3] * tdiag, cB[k]) + fnp.outer(cA[k], cB[k + 3] * tdiag)) * (
+            R[k] / 6.0
+        )
+    if k4 is not None:
+        om, k22 = k4
+        out = out + fnp.multiply(fnp.outer(cA[2], cB[2]), k22) * 0.25
+        for e in range(1, kmax + 1):
+            out = out + fnp.multiply(fnp.outer(cA[2 + e], cB[2 + e]), k22 * R[e]) * 0.25
+            out = out + (fnp.outer(cA[4 + e] * om, cB[e]) + fnp.outer(cA[e], cB[4 + e] * om)) * (
+                R[e] / 24.0
+            )
     return out
 
 
 class Estimator(BaseEstimator):
-    # 既定値は計画3改(research/search_k3.py、結果は results/search_k3*.json)で決めた。
-    # 探索用 MLP は mini 0〜39 番(40 個)。縮小係数 calib は設定ごとに解析的に最適化し、
-    # 残り 5 変数を焼きなまし法(25 反復)→ ビームサーチ(幅 2、収束まで)で探索した。
-    #   探索用 40 MLP: 6.06e-8 → 5.79e-8(前半 20 個・後半 20 個とも改善)
-    #   最終確認用 60 MLP(40〜99 番、探索に不使用): 5.88e-8 → 5.47e-8
-    # τ を下げて calib を上げる方向に改善が続き、τ=0.94 で止まった(0.92 は悪化)。
-    # 倍率は理論値 1 からの当てはめで、MLP の形状が変われば再調整が必要。
-    kmax = 2  # Mehler 展開の次数(共分散)
-    use_omega = True  # κ4 対角(超過尖度)の平均・分散補正
-    omega_scale = 0.8  # ω の全体倍率(理論値 1)
-    window = 7  # 誕生した源を何層分持つか(古い源を捨てて FLOP を減らす)
-    # 計画1: 同じニューロンが 2 回現れる 3 次の切り口 κ[h_i,h_i,h_k] と κ[h_i,h_i,h_i] を
-    # 正しい値にする補正源を、何層分持つか(0 なら使わない)。生 MSE は下がるが、
-    # FLOP の増加分を上回らず、どの探索でも window_iik=0 が最良または同点だった。
-    window_iik = 0
-    # 参照実装との照合で見つけた抜け: κ4 の放射部分を共分散と同一添字の 3 次切り口にも入れる
-    k4_cov = False
-    tau_scale = 0.94  # 3 次キュムラント(D3, D21)の倍率(理論値 1)
-    # 最終層の出力に掛ける縮小係数。正解 ≈ (1 - calib) × 予測。
-    # 9 特徴量の ridge(0.816)・GBM(0.83〜0.85)は、この 1 パラメータ補正を超えなかった(段階5)。
-    calib = 5.09e-4
-    collect = False  # True なら各層の内部量を self.features に残す(解析用。提出では使わない)
-    oracle = None  # 研究用: {層番号: {"D3", "D21", "omega"}} の真値を差し込む(提出では使わない)
+    kmax = 3  # Mehler 展開の次数(共分散)
+    window = 16  # 家族を何層分持つか(古い家族を捨てて FLOP を減らす)
+    iik_rank = 16  # 補正 Δ の残差の低ランク近似の階数(None なら補正しない)
+    use_k4 = True  # κ4 の放射部分を共分散・同一添字切り口に入れる
+    omega_scale = 1.0  # ω の全体倍率(理論値 1)
+    tau_scale = 1.0  # 3 次キュムラントの倍率(理論値 1)
+    calib = 0.0  # 最終層の出力に掛ける縮小係数(正解 ≈ (1 - calib) × 予測)
+    collect = False  # True なら層ごとの内部量を self.features に残す(解析用)
 
-    def __init__(
-        self,
-        kmax: int | None = None,
-        use_omega: bool | None = None,
-        omega_scale: float | None = None,
-        window: int | None = None,
-        tau_scale: float | None = None,
-        collect: bool | None = None,
-        calib: float | None = None,
-        window_iik: int | None = None,
-        oracle: dict | None = None,
-        k4_cov: bool | None = None,
-    ) -> None:
+    def __init__(self, **kwargs) -> None:
         self._setup_rng = None
-        if kmax is not None:
-            self.kmax = kmax
-        if use_omega is not None:
-            self.use_omega = use_omega
-        if omega_scale is not None:
-            self.omega_scale = omega_scale
-        if window is not None:
-            self.window = window
-        if tau_scale is not None:
-            self.tau_scale = tau_scale
-        if collect is not None:
-            self.collect = collect
-        if calib is not None:
-            self.calib = calib
-        if window_iik is not None:
-            self.window_iik = window_iik
-        self.oracle = oracle
-        if k4_cov is not None:
-            self.k4_cov = k4_cov
+        for key, value in kwargs.items():
+            if not hasattr(type(self), key):
+                raise TypeError(f"unknown option {key}")
+            setattr(self, key, value)
         self.features = []
 
     def setup(self, ctx: SetupContext) -> None:
@@ -166,17 +133,17 @@ class Estimator(BaseEstimator):
 
     # ------------------------------------------------------------------
     def predict(self, mlp: MLP, budget: int) -> fnp.ndarray:
-        n = mlp.width
-        depth = mlp.depth
-        win_rho, win_iik = _fit_windows(
-            n, depth, budget, depth if self.window is None else self.window, self.window_iik
-        )
-        kmax = self.kmax
+        n, depth, kmax = mlp.width, mlp.depth, self.kmax
+        rank = 0 if self.iik_rank is None else self.iik_rank
+        window = _fit_window(n, depth, budget, depth if self.window is None else self.window, rank)
         f32 = fnp.float32
 
         mu = fnp.zeros(n, dtype=f32)
         C = flops.as_symmetric(fnp.eye(n, dtype=f32), symmetry=(0, 1))
-        sources: list[list] = []  # [A, P, w, 種類, 年齢]
+        # 家族は「横並び」の行列で持つ: 家族 f の脚が列ブロック [f n, (f+1) n) を占める。
+        # こうすると、輸送も読み出しも家族の数によらず 1 回の演算で済む(Python 側の時間を抑える)。
+        nf = 0  # 生きている家族の数(古い順に左から並ぶ)
+        A_w = M_w = c2_w = e_w = dd_w = Z_w = Q_s = None
         rows = []
 
         for layer, w in enumerate(mlp.weights):
@@ -191,33 +158,37 @@ class Estimator(BaseEstimator):
             phi = flops.stats.norm.pdf(alpha).astype(f32)
             Phi = flops.stats.norm.cdf(alpha).astype(f32)
 
-            # --- 3 次キュムラントの読み出し(D3, D21) ---
+            # --- 3 次キュムラントの読み出し(D3 = T_aaa, D21 = T_aab) ---
             D3 = fnp.zeros(n, dtype=f32)
             D21 = None
-            for A, P, wq, _kind, _age in sources:
-                AA = A * A
-                D3 = D3 + 3.0 * fnp.sum(AA * P * wq[None, :], axis=1)
+            if nf > 0:
+                AA = A_w * A_w
+                d3 = AA * M_w * c2_w[None, :]
+                if e_w is not None:
+                    MM = M_w * M_w
+                    PD = A_w * e_w[None, :] + M_w * dd_w[None, :]
+                    if Z_w is not None:
+                        ZQ = fnp.einsum("nkr,kmr->nkm", fnp.reshape(Z_w, (n, nf, rank)), Q_s)
+                        PD = PD + fnp.reshape(ZQ, (n, nf * n))
+                    d3 = d3 + MM * PD
+                D3 = 3.0 * fnp.sum(d3, axis=1)
                 if not last:
-                    AAw = AA * wq[None, :]
-                    APw = (A * P) * wq[None, :]
-                    t = fnp.matmul(AAw, P.T) + 2.0 * fnp.matmul(APw, A.T)
-                    D21 = t if D21 is None else D21 + t
-            if self.oracle is not None and layer in self.oracle:
-                # 研究用: 真値(GPU MC)を差し込み、どの量の誤差が効いているかを測る
-                o = self.oracle[layer]
-                if "D3" in o:
-                    D3 = fnp.asarray(o["D3"], dtype=f32)
-                if "D21" in o and D21 is not None:
-                    D21 = fnp.asarray(o["D21"], dtype=f32)
-            D3_raw, D21_raw = D3, D21  # 源が表す値そのもの(倍率を掛ける前)
+                    XM = AA * c2_w[None, :]
+                    XA = 2.0 * (A_w * M_w) * c2_w[None, :]
+                    if e_w is not None:
+                        XM = XM + MM * dd_w[None, :] + 2.0 * (M_w * PD)
+                        XA = XA + MM * e_w[None, :]
+                    D21 = fnp.matmul(XM, M_w.T) + fnp.matmul(XA, A_w.T)
+                    if Z_w is not None:
+                        Y = fnp.einsum("nkm,kmr->nkr", fnp.reshape(MM, (n, nf, n)), Q_s)
+                        D21 = D21 + fnp.matmul(fnp.reshape(Y, (n, nf * rank)), Z_w.T)
+            D3_raw, D21_raw = D3, D21  # 家族が表す値そのもの(倍率を掛ける前)
             if self.tau_scale != 1.0:
                 D3 = D3 * self.tau_scale
                 if D21 is not None:
                     D21 = D21 * self.tau_scale
             tdiag = D3 / (sigma * var)  # τ_iii = T_iii / σ³
-            omega = (self.omega_scale * _omega_g(layer) / n) if self.use_omega else 0.0
-            if self.oracle is not None and layer in self.oracle and "omega" in self.oracle[layer]:
-                omega = fnp.asarray(self.oracle[layer]["omega"], dtype=f32)
+            omega = self.omega_scale * _omega_g(layer) / n
 
             # --- Hermite 係数 (p=1) ---
             top = max(kmax + 4, 7)
@@ -226,26 +197,19 @@ class Estimator(BaseEstimator):
             for k in range(2, top + 1):
                 c.append(sigma * phi * he[k - 2])
 
-            # --- 平均(単一頂点の 3 本ブロック補正) ---
-            mu_new = (
-                c[0] + c[3] * tdiag / 6.0 + c[6] * tdiag * tdiag / 72.0
-                + c[4] * (omega / 24.0)
-            )
-            # --- 分散: E[h²] を p=2 係数で補正 ---
+            # --- 平均と E[h²](単一頂点の 3 次・4 次ブロック補正) ---
+            mu_new = c[0] + c[3] * tdiag / 6.0 + c[6] * tdiag * tdiag / 72.0 + c[4] * (omega / 24.0)
             e2_0 = (m * m + var) * Phi + m * sigma * phi
-            e2_3 = 2.0 * var * phi
-            e2_6 = 2.0 * var * phi * he[3]
-            e2_4 = 2.0 * var * phi * he[1]
             ez2 = (
-                e2_0 + e2_3 * tdiag / 6.0 + e2_6 * tdiag * tdiag / 72.0
-                + e2_4 * (omega / 24.0)
+                e2_0 + 2.0 * var * phi * tdiag / 6.0
+                + 2.0 * var * phi * he[3] * tdiag * tdiag / 72.0
+                + 2.0 * var * phi * he[1] * (omega / 24.0)
             )
             var_post = fnp.maximum(ez2 - mu_new * mu_new, 0.0)
             if self.collect:
                 self.features.append({
-                    "m": m, "sigma": sigma, "alpha": alpha, "tdiag": tdiag,
-                    "mu": mu_new, "mu_gauss": c[0], "var_post": var_post,
-                    "D3": D3_raw,
+                    "m": m, "sigma": sigma, "alpha": alpha, "tdiag": tdiag, "mu": mu_new,
+                    "mu_gauss": c[0], "var_post": var_post, "D3": D3_raw,
                     "D21": D21_raw if D21_raw is not None else fnp.zeros((n, n), dtype=f32),
                 })
             mu = mu_new
@@ -253,122 +217,103 @@ class Estimator(BaseEstimator):
             if last:
                 break
 
-            # --- ReLU 後の共分散(Mehler + τ 1 次補正) ---
+            # --- ReLU 後の共分散 ---
             rho = S / fnp.outer(sigma, sigma)
             if D21 is not None:
                 t_iij = D21 / fnp.outer(var, sigma)  # T_iij / (σ_i² σ_j)
                 t_ijj = t_iij.T
             else:
-                t_iij = None
-            R = [None, rho]  # R[k] = ρ^k / k!
+                t_iij = t_ijj = None
+            R = [fnp.ones_like(rho), rho]  # R[k] = ρ^k / k!
             rp = rho
             for k in range(2, kmax + 1):
                 rp = rp * rho
                 R.append(rp / float(math.factorial(k)))
-            Cn = fnp.multiply(fnp.outer(c[1], c[1]), R[1])
-            for k in range(2, kmax + 1):
-                Cn = Cn + fnp.multiply(fnp.outer(c[k], c[k]), R[k])
-            if t_iij is not None:
-                for k in range(2, kmax + 1):
-                    Rk2 = fnp.ones_like(rho) if k == 2 else R[k - 2]
-                    Cn = Cn + fnp.multiply(
-                        fnp.outer(c[k], c[k - 1]) * t_iij
-                        + fnp.outer(c[k - 1], c[k]) * t_ijj,
-                        Rk2,
-                    ) * 0.5
-            # τ_iii による項(単一頂点ブロック、k=1..kmax)
-            for k in range(1, kmax + 1):
-                Cn = Cn + (
-                    fnp.outer(c[k + 3] * tdiag, c[k])
-                    + fnp.outer(c[k], c[k + 3] * tdiag)
-                ) * R[k] / 6.0
-            # κ4 の放射部分(参照実装の K=3 SIMPLE と同じ構造): 標準化した κ4 を
-            #   κ̃4_iiii = ω_i,  κ̃4_iijj = q_i q_j(q = √(ω/3)、i≠j)
-            # と置き、4 本ブロック 1 個の図を足す(a 本を i、b 本を j、残り e 本は ρ の辺):
-            #   c_{a+e}(i) c_{b+e}(j) κ̃ ρ^e/(a! b! e!)、(a,b) = (2,2), (4,0), (0,4)
             k4 = None
-            if self.k4_cov and self.use_omega:
-                om = omega * fnp.ones_like(sigma) if isinstance(omega, float) else omega
+            if self.use_k4:
+                om = omega * fnp.ones_like(sigma)
                 q = fnp.sqrt(om / 3.0)
                 k4 = (om, fnp.outer(q, q))
-                Cn = Cn + _k4_pair(c, c, k4, R, kmax, rho)
+            Cn = _pair_terms(c, c, R, kmax, t_iij, t_ijj, tdiag, k4)
             fnp.fill_diagonal(Cn, var_post)
             C = flops.as_symmetric(Cn, symmetry=(0, 1))
 
-            # --- 計画1: 同一添字の 3 次切り口を正しい値にする補正 Δ ---
+            # --- 同一添字の 3 次切り口の補正 Δ ---
             #   u[i,k] = κ[h_i,h_i,h_k] = Cov(h_i², h_k) - 2 μ_i C_ik   (i≠k)
-            #   u[i,i] = κ3[h_i] = E[h³] - 3 μ E[h²] + 2 μ³
-            # 源が既に表している値 U_src(誕生項 + 輸送項)との差 Δ = u - U_src を、
-            # A = I, P = Δᵀ(対角は 1/3)の源として次の層へ運ぶ。
-            delta = None
-            if win_iik > 0:
-                # p=2(h²)の Hermite 係数: k=0..kmax+3
+            #   κ3[h_i] = E[h³] - 3 μ E[h²] + 2 μ³
+            # 家族が既に表している値(誕生: 2 c1_i c2_i c1_k ρ_ik + c1_i² c2_k ρ_ik²、
+            # 輸送: Φ_i² Φ_k T_iik)との差を Δ として、新しい家族に入れる。
+            w_next = mlp.weights[layer + 1]
+            wT = w_next.T
+            A_new = fnp.matmul(wT, c[1][:, None] * rho)
+            e_new = dd_new = Z_new = Q_new = None
+            if self.iik_rank is not None:
                 c2p = [e2_0, 2.0 * sigma * c[0], 2.0 * var * Phi]
-                for k in range(3, kmax + 5):
-                    c2p.append(2.0 * var * phi * he[k - 3])
-                cov_sq = fnp.multiply(fnp.outer(c2p[1], c[1]), R[1])
-                for k in range(2, kmax + 1):
-                    cov_sq = cov_sq + fnp.multiply(fnp.outer(c2p[k], c[k]), R[k])
-                if t_iij is not None:
-                    for k in range(2, kmax + 1):
-                        Rk2 = fnp.ones_like(rho) if k == 2 else R[k - 2]
-                        cov_sq = cov_sq + fnp.multiply(
-                            fnp.outer(c2p[k], c[k - 1]) * t_iij
-                            + fnp.outer(c2p[k - 1], c[k]) * t_ijj,
-                            Rk2,
-                        ) * 0.5
-                for k in range(1, kmax + 1):
-                    cov_sq = cov_sq + (
-                        fnp.outer(c2p[k + 3] * tdiag, c[k])
-                        + fnp.outer(c2p[k], c[k + 3] * tdiag)
-                    ) * R[k] / 6.0
+                for kk in range(3, kmax + 5):
+                    c2p.append(2.0 * var * phi * he[kk - 3])
+                u = _pair_terms(c2p, c, R, kmax, t_iij, t_ijj, tdiag, k4) - 2.0 * mu[:, None] * Cn
+                ez3 = (
+                    m * e2_0 + 2.0 * var * c[0]
+                    + 6.0 * var * sigma * Phi * tdiag / 6.0
+                    + 6.0 * var * sigma * phi * he[2] * tdiag * tdiag / 72.0
+                )
                 if k4 is not None:
-                    cov_sq = cov_sq + _k4_pair(c2p, c, k4, R, kmax, rho)
-                u = cov_sq - 2.0 * mu[:, None] * Cn
-                # E[h³](τ 補正込み)と 3 次キュムラントの対角
-                e3_0 = m * e2_0 + 2.0 * var * c[0]
-                e3_3 = 6.0 * var * sigma * Phi
-                e3_6 = 6.0 * var * sigma * phi * he[2]
-                ez3 = e3_0 + e3_3 * tdiag / 6.0 + e3_6 * tdiag * tdiag / 72.0
-                if k4 is not None:
-                    ez3 = ez3 + 6.0 * var * sigma * phi * (k4[0] / 24.0)
+                    ez3 = ez3 + 6.0 * var * sigma * phi * (omega / 24.0)
                 k3d = ez3 - 3.0 * mu * ez2 + 2.0 * mu * mu * mu
-                # 源が表している値(誕生: 2 c1_i c2_i c1_k ρ_ik + c1_i² c2_k ρ_ik²、
-                # 輸送: Φ_i² Φ_k T_iik)
-                c1c2 = c[1] * c[2]
-                u_src = (
-                    2.0 * fnp.outer(c1c2, c[1]) * rho
-                    + fnp.outer(c[1] * c[1], c[2]) * (rho * rho)
+                u_src = 2.0 * fnp.outer(c[1] * c[2], c[1]) * rho + fnp.outer(c[1] * c[1], c[2]) * (
+                    rho * rho
                 )
                 k3_src = 3.0 * c[2] * c[1] * c[1]
                 if D21_raw is not None:
                     u_src = u_src + fnp.outer(Phi * Phi, Phi) * D21_raw
                     k3_src = k3_src + Phi * Phi * Phi * D3_raw
                 delta = u - u_src
-                fnp.fill_diagonal(delta, (k3d - k3_src) / 3.0)
+                fnp.fill_diagonal(delta, 0.0)
+                # 主要項: 行 i ごとに base_ik = c1_k ρ_ik の倍数 e_i で近似(最小二乗)
+                base = rho * c[1][None, :]
+                fnp.fill_diagonal(base, 0.0)
+                e_new = fnp.sum(delta * base, axis=1) / fnp.maximum(fnp.sum(base * base, axis=1), 1e-30)
+                dd_new = (k3d - k3_src) / 3.0 - c[1] * e_new
+                if rank > 0:
+                    # 残差の低ランク近似(乱択レンジファインダー、べき乗 1 回)。
+                    # 試行行列は乱数でなく次層の重みの先頭 r 列(決定的)。
+                    resid = delta - e_new[:, None] * base
+                    Yr = fnp.matmul(resid, w_next[:, :rank])
+                    Yr = fnp.matmul(resid, fnp.matmul(resid.T, Yr))
+                    Q_new, _ = fnp.linalg.qr(Yr)
+                    Z_new = fnp.matmul(wT, fnp.matmul(Q_new.T, resid).T)  # (n, r)
 
-            # --- 源の輸送(次層の重みと ReLU の傾き gain=Φ) ---
-            w_next = mlp.weights[layer + 1]
-            wT = w_next.T
-            moved = []
-            for A, P, wq, kind, age in sources:
-                win = win_rho if kind == "rho" else win_iik
-                if age + 1 >= win:
-                    continue  # 窓の外に出る源は運ばずに捨てる
-                moved.append([
-                    fnp.matmul(wT, Phi[:, None] * A),
-                    fnp.matmul(wT, Phi[:, None] * P),
-                    wq,
-                    kind,
-                    age + 1,
-                ])
-            # --- 源の誕生: A = Wᵀ diag(c1) ρ, P = Wᵀ, w = c_2 ---
-            if win_rho > 0:
-                moved.append([fnp.matmul(wT, c[1][:, None] * rho), wT, c[2], "rho", 0])
-            # --- 計画1 の補正源: A = Wᵀ, P = Wᵀ Δᵀ, w = 1 ---
-            if delta is not None:
-                moved.append([wT, fnp.matmul(wT, delta.T), fnp.ones_like(c[2]), "iik", 0])
-            sources = moved
+            # --- 家族の輸送(次層の重みと ReLU の傾き Φ)と誕生 ---
+            if nf > 0 and nf >= window:
+                # 最も古い家族(左端のブロック)は窓の外に出るので運ばずに捨てる
+                A_w, M_w, c2_w = A_w[:, n:], M_w[:, n:], c2_w[n:]
+                if e_w is not None:
+                    e_w, dd_w = e_w[n:], dd_w[n:]
+                if Z_w is not None:
+                    Z_w, Q_s = Z_w[:, rank:], Q_s[1:]
+                nf -= 1
+            if nf > 0:
+                A_w = fnp.matmul(wT, Phi[:, None] * A_w)
+                M_w = fnp.matmul(wT, Phi[:, None] * M_w)
+                if Z_w is not None:
+                    Z_w = fnp.matmul(wT, Phi[:, None] * Z_w)
+            if window > 0:
+                if nf == 0:
+                    A_w, M_w, c2_w = A_new, fnp.asarray(wT, dtype=f32), c[2]
+                    e_w, dd_w = e_new, dd_new
+                    Z_w = Z_new
+                    Q_s = None if Q_new is None else fnp.reshape(Q_new, (1, n, rank))
+                else:
+                    A_w = fnp.concatenate([A_w, A_new], axis=1)
+                    M_w = fnp.concatenate([M_w, wT], axis=1)
+                    c2_w = fnp.concatenate([c2_w, c[2]])
+                    if e_new is not None:
+                        e_w = fnp.concatenate([e_w, e_new])
+                        dd_w = fnp.concatenate([dd_w, dd_new])
+                    if Z_new is not None:
+                        Z_w = fnp.concatenate([Z_w, Z_new], axis=1)
+                        Q_s = fnp.concatenate([Q_s, fnp.reshape(Q_new, (1, n, rank))], axis=0)
+                nf += 1
 
         if self.calib:
             rows[-1] = rows[-1] * (1.0 - self.calib)

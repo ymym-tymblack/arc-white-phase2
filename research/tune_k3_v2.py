@@ -12,7 +12,7 @@ import time
 sys.path.insert(0, "research")
 from eval_mini import ROOT, SPLITS, Evaluator  # noqa: E402
 
-PATH = str(ROOT / "candidates/k3_factored.py")
+PATH = str(ROOT / "research/archive/k3_factored_v1.py")
 OUT = ROOT / "results/tune_k3_v2.json"
 
 # 探索空間: (名前, 下限, 上限, 貪欲法の刻み, 整数か)

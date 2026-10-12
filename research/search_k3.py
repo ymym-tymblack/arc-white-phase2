@@ -17,7 +17,7 @@ import time
 sys.path.insert(0, "research")
 from eval_mini import ROOT, Evaluator  # noqa: E402
 
-PATH = str(ROOT / "candidates/k3_factored.py")
+PATH = str(ROOT / "research/archive/k3_factored_v1.py")
 OUT = ROOT / "results/search_k3.json"
 SEARCH = list(range(0, 40))
 

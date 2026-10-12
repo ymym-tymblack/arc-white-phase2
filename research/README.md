@@ -20,9 +20,28 @@ uv run whest package --estimator candidates/k3_factored.py --output submission.t
 | + 探索した window/倍率(段階4) | 検証 28 | 2.7e-7 | 0.340 | 9.3e-8 |
 | 段階5 の既定(縮小係数あり) | 最終確認 60 | 2.24e-7 | 0.324 | 7.26e-8 |
 | 計画3 の既定 | 最終確認 60 | 1.82e-7 | 0.324 | 5.88e-8 |
-| **計画3改の既定(現在、SA→ビームサーチ)** | **最終確認 60** | **1.69e-7** | **0.324** | **5.47e-8** |
+| 計画3改の既定(旧版、`research/archive/k3_factored_v1.py`) | 最終確認 60 | 1.69e-7 | 0.324 | 5.47e-8 |
+| ARC 公式参照実装 K=3 SIMPLE(GPU、提出不可の参考値) | MLP 0〜3 | 3.7〜4.6e-8 | — | — |
+| **家族版(現在、定数の当てはめなし)** | **最終確認 60** | **3.25e-8** | **0.459** | **1.49e-8** |
 
-1 スレッドで 1 MLP 約 9 s、residual 0.10 s、最大メモリ 0.39 GB(`research/preflight.py`)。
+家族版は 1 スレッドで 1 MLP 約 16 s、residual 0.22〜0.23 s(上限 0.4 s)、最大メモリ 1.2 GB(`research/preflight.py`)。
+
+## 構造の差の特定(GPU、RTX 5090)
+
+定数の調整では最終層 MSE が約 1.7e-7 で止まったため、ARC の公式参照実装
+(github.com/alignment-research-center/mlp_cumulant_propagation、`/kaggle/ext` に取得)と
+GPU の MC 真値(2e8 サンプル)を作り、層ごとに内部量を照合した。
+
+| 手順 | 分かったこと |
+|---|---|
+| 参照実装を mini で実行(`gpu_reference.py`) | 同じ K=3 でも最終層 MSE 3.7e-8。私の版(定数なし)は 4.8e-7 で 13 倍の差。差は層 2 から開く |
+| 内部量を MC 真値と照合(`gpu_mc_stats.py`, `compare_internals.py`, `compare_three.py`) | 層 2 では私の版(iik 補正あり)と参照は一致。層 3 以降、私の版の D3・D21 の誤差が 16〜26% に膨らむ(参照は 4%) |
+| 真値の差し込み(オラクル)と幅 128 の成分比較(`n128_vs_ref.py`) | 抜けていたのは κ4 の放射部分(κ̃4_iijj = ω/3)の、共分散と同一添字 3 次切り口への寄与。入れると内部量が参照と一致 |
+| 同一添字切り口の補正 Δ の構造(`/tmp` の試験、コミット e16a767) | Δ ≈ 主要項(誕生脚 A の列スケール)+ 階数 16 の残差で精度が変わらない → 別の密な脚が不要 |
+| 家族版(`candidates/k3_factored.py`) | 補正つきで FLOP は補正なしと同じ。窓 16 で最終層 MSE 3.2e-8(参照実装より良い) |
+
+GPU 研究環境は `research/gpu_env.sh`(提出用とは別の Python 3.12 環境、torch 2.14 + CUDA 13)。wandb はオフライン
+記録(`/kaggle/ext/wandb`)。
 
 ## 計画0〜4(改善の第2ラウンド)
 
@@ -49,9 +68,12 @@ uv run whest package --estimator candidates/k3_factored.py --output submission.t
 | `research/k3_dense.py` | 密テンソル版(n=128〜256 用)。論文の diagram summation formula(Theorem A.2)を τ 1次まで実装。アブレーション用スイッチ付き |
 | `research/check_k3_dense.py`, `ablate_k3.py` | MC との照合、項ごとのアブレーション |
 | `research/mc_cumulants.py`, `oracle_k4.py`, `oracle_k4b.py`, `k4_birth.py` | κ4 を MC で測って密版に注入する実験(計画2 を含む) |
-| `candidates/k3_factored.py` | 因子化版(提出用)。密版の最小構成 {rho, tau1, pairtau, meantau} と一致 |
-| `research/check_factored.py`, `check_factored_iik.py` | 因子化版と密版の一致確認(最大差 8e-7、iik あり 7e-7) |
-| `research/eval_mini.py`, `scan.py` | mini 上の並列評価ハーネス(公式スコアと同じ式)と設定の一括評価 |
+| `candidates/k3_factored.py` | 家族版(提出用) |
+| `research/archive/k3_factored_v1.py` | 旧版(計画0〜4 と探索スクリプトの再現用) |
+| `research/check_factored.py`, `check_factored_iik.py` | 旧版と密版の一致確認(最大差 8e-7、iik あり 7e-7) |
+| `research/gpu_env.sh`, `gpu_reference.py`, `gpu_ref_internals.py`, `gpu_mc_stats.py` | GPU での参照実装・MC 真値 |
+| `research/export_mini.py`, `dump_ours.py`, `compare_internals.py`, `compare_three.py`, `n128_vs_ref.py`, `oracle_mc.py`, `oracle_refomega.py` | 層別照合とオラクル実験 |
+| `research/eval_mini.py`, `scan.py`, `scan_fit.py` | mini 上の並列評価ハーネス(公式スコアと同じ式)と設定の一括評価(`scan_fit` は縮小係数を解析的に最適化) |
 | `research/tune_k3.py`, `tune_k3_v2.py`, `search_k3.py` | 段階4の TPE、計画3の貪欲法 → TPE、計画3改の焼きなまし法 → ビームサーチ |
 | `research/split_sensitivity.py` | 評価分割の選び方で改善率がどれだけ揺れるか |
 | `research/preflight.py` | 提出前の安全確認(形状・FLOP・時間・residual・メモリ) |
@@ -60,26 +82,24 @@ uv run whest package --estimator candidates/k3_factored.py --output submission.t
 
 ## 数式の要点
 
-- 事前活性化 `z` の状態 `(m, S, T)`: 平均・共分散・3次キュムラント。
-- ReLU 後の共分散は Hermite 展開の接続図の和(Mehler 項 `Σ_k c_k c_k ρ^k/k!` + τ の 1 次補正)。
-- T は源(source)の和で持つ: `T_abc = Σ_b Σ_q w_q (A_aq A_bq P_cq + 置換)`。
-  ReLU が読むのは `D3 = T_aaa` と `D21 = T_aab` だけ(n³ の行列積 2 回で読み出す)。
-  輸送は `A ← Wᵀ diag(Φ(α)) A`、`P ← Wᵀ diag(Φ(α)) P`。誕生は `A = Wᵀ diag(c1) ρ, P = Wᵀ, w = c2`。
-- κ4 は対角の超過尖度 `ω_ℓ = G[ℓ]/n` だけを平均・分散の補正に使う(`G` は MC 実測の表、`ω ∝ 1/n`)。
-  共分散側(κ4_iijj など)だけ入れても、3 次の誕生(κ4_ijkk)に入れても悪化する(オラクルで確認)。
+- 事前活性化 `z` の状態 `(m, S, T)`: 平均・共分散・3次キュムラント。κ4 は放射部分だけ(κ̃4_iiii = ω、κ̃4_iijj = ω/3)。
+- ReLU 後の共分散は Hermite 展開の接続図の和(Mehler 項 + τ の 1 次 + κ4 放射の 1 次)。
+- T は家族の和で持つ: `T = Σ_q c2_q Sym(A A M) + Σ_q Sym(M M PΔ)`、`PΔ = A diag(e) + M diag(dd) + Z Qᵀ`。
+  ReLU が読むのは `D3 = T_aaa` と `D21 = T_aab` だけ(家族全体で n³ の行列積 2 回)。
+  輸送は `X ← Wᵀ diag(Φ(α)) X`(X = A, M, Z)。家族は横並びの行列で持ち、家族数によらず演算回数が一定。
+- ω の層平均は表 `ω_ℓ = G[ℓ]/n`(MC 実測、参照実装の解析値と 2〜15% で一致)。
 
 ## 測って分かったこと(要点)
 
 - 周辺の非ガウス性(Edgeworth)は誤差の約 5%。残りは μ_z, σ_z の伝播誤差で、ニューロン間の
   交差キュムラントが主因(独立和の近似は κ4 を 60 倍過小評価)。
 - 密版の項のうち効くのは `rho`, `tau1`, `pairtau`, `meantau`。`tau1e`, `txxx` は不要、`txxy` は約 5%。
-- 古い源を捨てる(window)と、MSE がほぼ変わらず FLOP が減る(7〜10 付近が最良)。
+- 古い源を捨てる(window)のは旧版では得だったが、家族版では窓 16(全部持つ)が最良。窓 10 では最終層 MSE が 2 倍以上悪い。
 - 学習補正: 9 特徴の ridge(0.816)・GBM(0.83〜0.85)は 1 パラメータの縮小(0.825)を超えない。
 
 ## 未実装・既知の制約
 
-- `iik` 補正は実装済みだが、幅 1024 ではスコアに効かないため既定で無効。
-- 深さが 16 を超える場合の ω 表は外挿。FLOP ガードで予算内には収まる(深さ 32 で 0.77B)。
+- 深さが 16 を超える場合の ω 表は外挿。FLOP ガードで予算内には収まる(深さ 24 で 0.78B、32 で 0.69B)。
 - Strassen 型の分割は、公平性の扱いが不明なので使っていない。
-- 定数(`omega_scale`, `tau_scale`, `calib`, `window`)は理論値ではなく当てはめ値。MLP の形状が
-  変われば再調整が必要。
+- residual 時間は 0.22 s 前後で、上限 0.4 s までの余裕は約 1.8 倍。評価機が遅い場合の余裕は小さい。
+- 家族版の定数は ω の表だけ(倍率 1、縮小係数 0)。縮小係数の解析的最適値は -1.4e-6 でほぼ 0。

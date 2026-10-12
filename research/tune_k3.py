@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, "research")
 from eval_mini import Evaluator, ROOT  # noqa: E402
 
-PATH = str(ROOT / "candidates/k3_factored.py")
+PATH = str(ROOT / "research/archive/k3_factored_v1.py")
 TUNE = list(range(0, 12))
 VALID = list(range(12, 40))
 

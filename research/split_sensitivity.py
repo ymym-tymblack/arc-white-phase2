@@ -13,7 +13,7 @@ NEW = {}
 
 if __name__ == "__main__":
     ev = Evaluator(range(100))
-    path = str(ROOT / "candidates/k3_factored.py")
+    path = str(ROOT / "research/archive/k3_factored_v1.py")
     per = {}
     for name, kw in (("old", OLD), ("new", NEW)):
         r = ev.score(path, **kw)
