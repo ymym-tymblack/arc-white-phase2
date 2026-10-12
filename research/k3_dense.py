@@ -88,7 +88,7 @@ def rho_pows(rho: np.ndarray, emax: int) -> list[np.ndarray]:
     return out
 
 
-def pair_cov(cA, cB, rho, t_iij, t_ijj, t_iii, t_jjj, kmax: int, use_tau: bool = True):
+def pair_cov(cA, cB, rho, t_iij, t_ijj, t_iii, t_jjj, kmax: int, use_tau: bool = True, k4=None):
     """Cov[gA(z_i), gB(z_j)] (i≠j) の n×n 行列。cA, cB は (kmax+4, n)。
 
     τ=0 の項は Σ_k cA_k cB_k ρ^k / k!。τ 1 次の項は図(2 本辺 + 3 本ブロック 1 個)から:
@@ -109,14 +109,27 @@ def pair_cov(cA, cB, rho, t_iij, t_ijj, t_iii, t_jjj, kmax: int, use_tau: bool =
     for k in range(1, kmax + 1):
         tot += np.outer(cA[k + 3] * t_iii, cB[k]) * R[k] / 6.0
         tot += np.outer(cA[k], cB[k + 3] * t_jjj) * R[k] / 6.0
+    if k4 is not None:
+        # 4 本ブロック(1 次): 頂点 i に a 本、j に b 本、残りは i-j の 2 本辺 e 本
+        #   項 = c_{a+e}(i) c_{b+e}(j) κ̃ R[e] / (a! b!)
+        omega, k_iijj, k_iiij = k4
+        for e in range(0, kmax + 1):
+            tot += np.outer(cA[2 + e], cB[2 + e]) * k_iijj * R[e] / 4.0
+            tot += np.outer(cA[3 + e], cB[1 + e]) * k_iiij * R[e] / 6.0
+            tot += np.outer(cA[1 + e], cB[3 + e]) * k_iiij.T * R[e] / 6.0
+            if e >= 1:
+                tot += np.outer(cA[4 + e] * omega, cB[e]) * R[e] / 24.0
+                tot += np.outer(cA[e], cB[4 + e] * omega) * R[e] / 24.0
     return tot
 
 
-def corrected_raw_mean(c, tau_diag, use_tau: bool = True):
+def corrected_raw_mean(c, tau_diag, use_tau: bool = True, omega=None):
     """E[g(Y_i)] = c_0 + c_3 τ/6 + c_6 τ²/72 (単一頂点: 3 本ブロックのみ)。"""
     out = c[0].copy()
     if use_tau and "meantau" in GROUPS:
         out += c[3] * tau_diag / 6.0 + c[6] * tau_diag**2 / 72.0
+    if omega is not None:
+        out += c[4] * omega / 24.0
     return out
 
 
@@ -216,19 +229,20 @@ def third_distinct(c1, rho, tau3, emax: int, use_tau: bool = True):
 
 
 
-def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool):
+def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool, k4=None):
     """z = (m, S, T) から h = ReLU(z) の (μ, C, U) を返す。"""
     n = m.size
     s = np.sqrt(np.maximum(np.diag(S), 1e-12))
     rho = S / np.outer(s, s)
-    kc = max(kmax + 3, 2 * emax + 3, 6) + 1
+    kc = max(kmax + 6, 2 * emax + 3, 6) + 1
     cs = relu_coeffs(m, s, kc)
     c1, c2, c3 = cs[1], cs[2], cs[3]
     tau3 = T / (s[:, None, None] * s[None, :, None] * s[None, None, :]) if use_tau else None
     tdiag = np.einsum("iii->i", tau3) if use_tau else np.zeros(n)
 
-    mu = corrected_raw_mean(c1, tdiag, use_tau)
-    m2 = corrected_raw_mean(c2, tdiag, use_tau)
+    omega = k4[0] if k4 is not None else None
+    mu = corrected_raw_mean(c1, tdiag, use_tau, omega)
+    m2 = corrected_raw_mean(c2, tdiag, use_tau, omega)
     m3 = corrected_raw_mean(c3, tdiag, use_tau)
     var = np.maximum(m2 - mu**2, 0.0)
     k3d = m3 - 3 * mu * m2 + 2 * mu**3
@@ -239,7 +253,7 @@ def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool):
         t_ijj = np.einsum("ijj->ij", tau3)
     else:
         t_iij = t_ijj = zero
-    C = pair_cov(c1, c1, rho, t_iij, t_ijj, tdiag, tdiag, kmax, use_tau)
+    C = pair_cov(c1, c1, rho, t_iij, t_ijj, tdiag, tdiag, kmax, use_tau, k4)
     np.fill_diagonal(C, var)
 
     if not use_tau:
@@ -271,7 +285,7 @@ def linear_step(W, mu, C, U):
     return m, S, T
 
 
-def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True):
+def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True, kap4=None):
     """各層の h の平均 μ (depth, n) を返す。K=2 (use_tau=False) は Mehler 共分散伝播。"""
     n = weights[0].shape[0]
     mu = np.zeros(n)
@@ -280,6 +294,6 @@ def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True):
     rows = []
     for W in weights:
         m, S, T = linear_step(W.astype(np.float64), mu, C, U)
-        mu, C, U = state_to_h(m, S, T, kmax, emax, use_tau)
+        mu, C, U = state_to_h(m, S, T, kmax, emax, use_tau, kap4[len(rows)] if kap4 else None)
         rows.append(mu)
     return np.stack(rows)

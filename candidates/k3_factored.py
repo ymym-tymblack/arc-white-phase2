@@ -42,6 +42,22 @@ def _hermite_neg_alpha(alpha, upto: int):
     return out[: upto + 1]
 
 
+# 事前活性化 z の超過尖度の層平均 ω_ℓ ≈ G[ℓ] / n (ℓ=0..15 は 1〜16 層目)。
+# 値は幅1024・16層の MLP 3 個の MC 実測(results/layer_error.json の kurt × 1024)。
+# 幅128でも G/n が実測と一致することを確認済み(ω は 1/n に比例)。
+# 16 層より深い場合は最後の傾き 約1.8/層 で外挿する。
+_OMEGA_G = (
+    0.05, 9.9, 16.94, 21.82, 26.71, 31.42, 35.48, 39.19,
+    42.84, 45.89, 49.41, 52.42, 55.03, 58.67, 60.49, 62.31,
+)
+
+
+def _omega_g(layer: int) -> float:
+    if layer < len(_OMEGA_G):
+        return _OMEGA_G[layer]
+    return _OMEGA_G[-1] + 1.8 * (layer - len(_OMEGA_G) + 1)
+
+
 def _max_live_sources(n: int, depth: int, budget: int, margin: float = 0.85) -> int:
     """予算内に収まる「同時に保持する源の数」の上限を解析的な FLOP 見積りから決める。
 
@@ -66,11 +82,14 @@ def _max_live_sources(n: int, depth: int, budget: int, margin: float = 0.85) -> 
 
 class Estimator(BaseEstimator):
     kmax = 3  # Mehler 展開の次数(共分散)
+    use_omega = True  # κ4 対角(超過尖度)の平均・分散補正
 
-    def __init__(self, kmax: int | None = None) -> None:
+    def __init__(self, kmax: int | None = None, use_omega: bool | None = None) -> None:
         self._setup_rng = None
         if kmax is not None:
             self.kmax = kmax
+        if use_omega is not None:
+            self.use_omega = use_omega
 
     def setup(self, ctx: SetupContext) -> None:
         self._setup_rng = fnp.random.default_rng(ctx.seed)
@@ -112,6 +131,7 @@ class Estimator(BaseEstimator):
                     t = fnp.matmul(AAw, P.T) + 2.0 * fnp.matmul(APw, A.T)
                     D21 = t if D21 is None else D21 + t
             tdiag = D3 / (sigma * var)  # τ_iii = T_iii / σ³
+            omega = (_omega_g(layer) / n) if self.use_omega else 0.0
 
             # --- Hermite 係数 (p=1) ---
             top = max(kmax + 3, 6)
@@ -121,12 +141,19 @@ class Estimator(BaseEstimator):
                 c.append(sigma * phi * he[k - 2])
 
             # --- 平均(単一頂点の 3 本ブロック補正) ---
-            mu_new = c[0] + c[3] * tdiag / 6.0 + c[6] * tdiag * tdiag / 72.0
+            mu_new = (
+                c[0] + c[3] * tdiag / 6.0 + c[6] * tdiag * tdiag / 72.0
+                + c[4] * (omega / 24.0)
+            )
             # --- 分散: E[h²] を p=2 係数で補正 ---
             e2_0 = (m * m + var) * Phi + m * sigma * phi
             e2_3 = 2.0 * var * phi
             e2_6 = 2.0 * var * phi * he[3]
-            ez2 = e2_0 + e2_3 * tdiag / 6.0 + e2_6 * tdiag * tdiag / 72.0
+            e2_4 = 2.0 * var * phi * he[1]
+            ez2 = (
+                e2_0 + e2_3 * tdiag / 6.0 + e2_6 * tdiag * tdiag / 72.0
+                + e2_4 * (omega / 24.0)
+            )
             var_post = fnp.maximum(ez2 - mu_new * mu_new, 0.0)
             mu = mu_new
             rows.append(mu)
