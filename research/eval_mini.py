@@ -66,9 +66,12 @@ def _run(args):
     mse = float(((pred[-1] - truth[-1]) ** 2).mean())
     all_mse = float(((pred - truth) ** 2).mean())
     used = int(ctx.flops_used)
+    p, r = pred[-1], truth[-1] - pred[-1]
     return dict(idx=idx, mse=mse, all_mse=all_mse, flops=used, sec=dt,
                 resid=float(ctx.residual_wall_time_s),
-                layers=((pred - truth) ** 2).mean(1).tolist())
+                layers=((pred - truth) ** 2).mean(1).tolist(),
+                # 縮小係数を解析的に当てはめるための最終層の和(計画3 改)
+                spp=float(p @ p), spr=float(p @ r), srr=float(r @ r), n=int(p.size))
 
 
 # 計画0 で固定した評価分割(mini の MLP 番号)。最終確認用は当てはめに使わない。
@@ -99,6 +102,29 @@ class Evaluator:
             resid=max(r["resid"] for r in res),
             sec=max(r["sec"] for r in res),
             per=res,
+        )
+
+    def score_fit_calib(self, path: str, **kwargs):
+        """縮小係数 calib を、この MLP 群で調整後スコアが最小になる値に解析的に決めて評価する。
+
+        予測を (1-ε) 倍すると最終層の残差は r + ε p になるので、MLP m の MSE は
+            MSE_m(ε) = (Σr² + 2ε Σpr + ε² Σp²) / n
+        調整後スコアは Σ_m g_m MSE_m(ε)(g_m = max(0.1, C_m/B))で ε の 2 次式なので、
+            ε* = -Σ_m g_m Σpr_m / Σ_m g_m Σp²_m
+        が最小値を与える。探索の次元を 1 つ減らし、その分の雑音もなくす。
+        """
+        kwargs = dict(kwargs, calib=0.0)
+        res = list(self.pool.map(_run, [(path, kwargs, i) for i in self.idxs]))
+        B = 2**41
+        g = [max(0.1, r["flops"] / B) / r["n"] for r in res]
+        eps = -sum(gi * r["spr"] for gi, r in zip(g, res)) / sum(gi * r["spp"] for gi, r in zip(g, res))
+        per_mse = [(r["srr"] + 2 * eps * r["spr"] + eps * eps * r["spp"]) / r["n"] for r in res]
+        adj = [m * max(0.1, r["flops"] / B) for m, r in zip(per_mse, res)]
+        return dict(
+            adj=sum(adj) / len(adj), mse=sum(per_mse) / len(res), calib=eps,
+            util=sum(r["flops"] for r in res) / len(res) / B,
+            resid=max(r["resid"] for r in res), sec=max(r["sec"] for r in res),
+            per=res, per_adj=adj,
         )
 
 
