@@ -58,26 +58,37 @@ def _omega_g(layer: int) -> float:
     return _OMEGA_G[-1] + 1.8 * (layer - len(_OMEGA_G) + 1)
 
 
-def _max_live_sources(n: int, depth: int, budget: int, margin: float = 0.85) -> int:
-    """予算内に収まる「同時に保持する源の数」の上限を解析的な FLOP 見積りから決める。
+def _estimate_flops(n: int, depth: int, win_rho: int, win_iik: int) -> float:
+    """解析的な FLOP 見積り(行列積 1 回 = 2 n³)。少し多めに見積もる。
 
-    FLOP が予算を超えると、その MLP の予測はゼロに置き換わる(割引もなし)。
-    競技の形状(1024×16)では上限に達しないが、深い MLP(スモークテストなど)では
-    古い源から捨てて予算内に収める。
-    見積り(行列積 1 回 = 2 n³):
-      層ごとの基本コスト   ≈ 3.22e9 (n/1024)³ + 2 n³ (誕生)
-      源 1 個・1 層あたり  ≈ 8 n³ (輸送 2 + 読み出し 2)
+    層ごとの基本コスト ≈ 共分散のサンドイッチ 3.22e9 (n/1024)³ + 誕生の行列積 2 n³
+                          (+ iik 源の誕生 2 n³)
+    源 1 個・1 層あたり  ≈ 8 n³(輸送 2 回 + 読み出し 2 回)
     """
     n3 = float(n) ** 3
-    base = 3.22e9 * (n / 1024.0) ** 3 + 2.0 * n3
-    for cap in range(depth, -1, -1):
-        total = 0.0
-        for layer in range(depth):
-            live = min(layer, cap)
-            total += base + 8.0 * n3 * live
-        if total <= margin * budget:
-            return cap
-    return 0
+    base = 3.22e9 * (n / 1024.0) ** 3 + 2.0 * n3 + (2.0 * n3 if win_iik > 0 else 0.0)
+    total = 0.0
+    for layer in range(depth):
+        live = min(layer, win_rho) + min(layer, win_iik)
+        total += base + 8.0 * n3 * live
+    return total
+
+
+def _fit_windows(n: int, depth: int, budget: int, win_rho: int, win_iik: int,
+                 margin: float = 0.85) -> tuple[int, int]:
+    """予算を超えないよう、大きい方の窓から 1 ずつ縮める。
+
+    FLOP が予算を超えると、その MLP の予測はゼロに置き換わる(割引もなし)。
+    競技の形状(1024×16)では縮めないが、深い MLP(スモークテストなど)で効く。
+    """
+    while _estimate_flops(n, depth, win_rho, win_iik) > margin * budget:
+        if win_rho == 0 and win_iik == 0:
+            break
+        if win_iik >= win_rho and win_iik > 0:
+            win_iik -= 1
+        else:
+            win_rho -= 1
+    return win_rho, win_iik
 
 
 class Estimator(BaseEstimator):
@@ -88,7 +99,10 @@ class Estimator(BaseEstimator):
     # 倍率は理論値が 1 だが、τ は 1.14 付近が最良だった(古い源を捨てた分の補償を含む
     # 可能性があり、MLP 形状が変われば再調整が必要)。
     omega_scale = 1.05  # ω の全体倍率(理論値 1)
-    window = 7  # 同時に保持する源の上限(古い源を捨てて FLOP を減らす)
+    window = 7  # 誕生した源を何層分持つか(古い源を捨てて FLOP を減らす)
+    # 計画1: 同じニューロンが 2 回現れる 3 次の切り口 κ[h_i,h_i,h_k] と κ[h_i,h_i,h_i] を
+    # 正しい値にする補正源を、何層分持つか(0 なら使わない)。
+    window_iik = 0
     tau_scale = 1.14  # 3 次キュムラント(D3, D21)の倍率(理論値 1)
     # 段階5: 最終層の出力に掛ける縮小係数。正解 ≈ (1 - calib) × 予測。
     # 計画0 で当てはめ直し: mini 0〜39 番だけで最小二乗(2.25e-4)。最終確認用 40〜99 番では
@@ -106,6 +120,7 @@ class Estimator(BaseEstimator):
         tau_scale: float | None = None,
         collect: bool | None = None,
         calib: float | None = None,
+        window_iik: int | None = None,
     ) -> None:
         self._setup_rng = None
         if kmax is not None:
@@ -122,6 +137,8 @@ class Estimator(BaseEstimator):
             self.collect = collect
         if calib is not None:
             self.calib = calib
+        if window_iik is not None:
+            self.window_iik = window_iik
         self.features = []
 
     def setup(self, ctx: SetupContext) -> None:
@@ -131,15 +148,15 @@ class Estimator(BaseEstimator):
     def predict(self, mlp: MLP, budget: int) -> fnp.ndarray:
         n = mlp.width
         depth = mlp.depth
-        max_live = _max_live_sources(n, depth, budget)
-        if self.window is not None:
-            max_live = min(max_live, self.window)
+        win_rho, win_iik = _fit_windows(
+            n, depth, budget, depth if self.window is None else self.window, self.window_iik
+        )
         kmax = self.kmax
         f32 = fnp.float32
 
         mu = fnp.zeros(n, dtype=f32)
         C = flops.as_symmetric(fnp.eye(n, dtype=f32), symmetry=(0, 1))
-        sources: list[list] = []  # [A, P, w]
+        sources: list[list] = []  # [A, P, w, 種類, 年齢]
         rows = []
 
         for layer, w in enumerate(mlp.weights):
@@ -157,7 +174,7 @@ class Estimator(BaseEstimator):
             # --- 3 次キュムラントの読み出し(D3, D21) ---
             D3 = fnp.zeros(n, dtype=f32)
             D21 = None
-            for A, P, wq in sources:
+            for A, P, wq, _kind, _age in sources:
                 AA = A * A
                 D3 = D3 + 3.0 * fnp.sum(AA * P * wq[None, :], axis=1)
                 if not last:
@@ -165,6 +182,7 @@ class Estimator(BaseEstimator):
                     APw = (A * P) * wq[None, :]
                     t = fnp.matmul(AAw, P.T) + 2.0 * fnp.matmul(APw, A.T)
                     D21 = t if D21 is None else D21 + t
+            D3_raw, D21_raw = D3, D21  # 源が表す値そのもの(倍率を掛ける前)
             if self.tau_scale != 1.0:
                 D3 = D3 * self.tau_scale
                 if D21 is not None:
@@ -236,19 +254,76 @@ class Estimator(BaseEstimator):
             fnp.fill_diagonal(Cn, var_post)
             C = flops.as_symmetric(Cn, symmetry=(0, 1))
 
+            # --- 計画1: 同一添字の 3 次切り口を正しい値にする補正 Δ ---
+            #   u[i,k] = κ[h_i,h_i,h_k] = Cov(h_i², h_k) - 2 μ_i C_ik   (i≠k)
+            #   u[i,i] = κ3[h_i] = E[h³] - 3 μ E[h²] + 2 μ³
+            # 源が既に表している値 U_src(誕生項 + 輸送項)との差 Δ = u - U_src を、
+            # A = I, P = Δᵀ(対角は 1/3)の源として次の層へ運ぶ。
+            delta = None
+            if win_iik > 0:
+                # p=2(h²)の Hermite 係数: k=0..kmax+3
+                c2p = [e2_0, 2.0 * sigma * c[0], 2.0 * var * Phi]
+                for k in range(3, kmax + 4):
+                    c2p.append(2.0 * var * phi * he[k - 3])
+                cov_sq = fnp.multiply(fnp.outer(c2p[1], c[1]), R[1])
+                for k in range(2, kmax + 1):
+                    cov_sq = cov_sq + fnp.multiply(fnp.outer(c2p[k], c[k]), R[k])
+                if t_iij is not None:
+                    for k in range(2, kmax + 1):
+                        Rk2 = fnp.ones_like(rho) if k == 2 else R[k - 2]
+                        cov_sq = cov_sq + fnp.multiply(
+                            fnp.outer(c2p[k], c[k - 1]) * t_iij
+                            + fnp.outer(c2p[k - 1], c[k]) * t_ijj,
+                            Rk2,
+                        ) * 0.5
+                for k in range(1, kmax + 1):
+                    cov_sq = cov_sq + (
+                        fnp.outer(c2p[k + 3] * tdiag, c[k])
+                        + fnp.outer(c2p[k], c[k + 3] * tdiag)
+                    ) * R[k] / 6.0
+                u = cov_sq - 2.0 * mu[:, None] * Cn
+                # E[h³](τ 補正込み)と 3 次キュムラントの対角
+                e3_0 = m * e2_0 + 2.0 * var * c[0]
+                e3_3 = 6.0 * var * sigma * Phi
+                e3_6 = 6.0 * var * sigma * phi * he[2]
+                ez3 = e3_0 + e3_3 * tdiag / 6.0 + e3_6 * tdiag * tdiag / 72.0
+                k3d = ez3 - 3.0 * mu * ez2 + 2.0 * mu * mu * mu
+                # 源が表している値(誕生: 2 c1_i c2_i c1_k ρ_ik + c1_i² c2_k ρ_ik²、
+                # 輸送: Φ_i² Φ_k T_iik)
+                c1c2 = c[1] * c[2]
+                u_src = (
+                    2.0 * fnp.outer(c1c2, c[1]) * rho
+                    + fnp.outer(c[1] * c[1], c[2]) * (rho * rho)
+                )
+                k3_src = 3.0 * c[2] * c[1] * c[1]
+                if D21_raw is not None:
+                    u_src = u_src + fnp.outer(Phi * Phi, Phi) * D21_raw
+                    k3_src = k3_src + Phi * Phi * Phi * D3_raw
+                delta = u - u_src
+                fnp.fill_diagonal(delta, (k3d - k3_src) / 3.0)
+
             # --- 源の輸送(次層の重みと ReLU の傾き gain=Φ) ---
             w_next = mlp.weights[layer + 1]
             wT = w_next.T
             moved = []
-            for A, P, wq in sources:
+            for A, P, wq, kind, age in sources:
+                win = win_rho if kind == "rho" else win_iik
+                if age + 1 >= win:
+                    continue  # 窓の外に出る源は運ばずに捨てる
                 moved.append([
                     fnp.matmul(wT, Phi[:, None] * A),
                     fnp.matmul(wT, Phi[:, None] * P),
                     wq,
+                    kind,
+                    age + 1,
                 ])
             # --- 源の誕生: A = Wᵀ diag(c1) ρ, P = Wᵀ, w = c_2 ---
-            moved.append([fnp.matmul(wT, c[1][:, None] * rho), wT, c[2]])
-            sources = moved[-max_live:] if max_live else []
+            if win_rho > 0:
+                moved.append([fnp.matmul(wT, c[1][:, None] * rho), wT, c[2], "rho", 0])
+            # --- 計画1 の補正源: A = Wᵀ, P = Wᵀ Δᵀ, w = 1 ---
+            if delta is not None:
+                moved.append([wT, fnp.matmul(wT, delta.T), fnp.ones_like(c[2]), "iik", 0])
+            sources = moved
 
         if self.calib:
             rows[-1] = rows[-1] * (1.0 - self.calib)

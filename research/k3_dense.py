@@ -229,7 +229,7 @@ def third_distinct(c1, rho, tau3, emax: int, use_tau: bool = True):
 
 
 
-def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool, k4=None):
+def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool, k4=None, k4b=None):
     """z = (m, S, T) から h = ReLU(z) の (μ, C, U) を返す。"""
     n = m.size
     s = np.sqrt(np.maximum(np.diag(S), 1e-12))
@@ -263,6 +263,13 @@ def state_to_h(m, S, T, kmax: int, emax: int, use_tau: bool, k4=None):
     cov_sq = pair_cov(c2, c1, rho, t_iij, t_ijj, tdiag, tdiag, kmax, True)
     u_iik = cov_sq - 2.0 * mu[:, None] * C  # [i,k] = κ[h_i,h_i,h_k]
     U = third_distinct(c1, rho, tau3, emax, True)
+    if k4b is not None:
+        # 計画2: 4 次キュムラント経由の 3 次の誕生。K[i,j,k] = κ̃4[z_i,z_j,z_k,z_k](k が 2 回)。
+        #   κ[h_i,h_j,h_k] += c1_i c1_j c2_k / 2 · K[i,j,k] + (2 回現れる添字を i, j にした 2 通り)
+        a1, a2 = c1[1], c1[2]
+        U += np.einsum("i,j,k,ijk->ijk", a1, a1, a2, k4b) / 2.0
+        U += np.einsum("i,j,k,jki->ijk", a2, a1, a1, k4b) / 2.0
+        U += np.einsum("i,j,k,ikj->ijk", a1, a2, a1, k4b) / 2.0
     for i in range(n):
         if "iik" in GROUPS:
             U[i, i, :] = u_iik[i]
@@ -285,7 +292,7 @@ def linear_step(W, mu, C, U):
     return m, S, T
 
 
-def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True, kap4=None):
+def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True, kap4=None, k4birth=None):
     """各層の h の平均 μ (depth, n) を返す。K=2 (use_tau=False) は Mehler 共分散伝播。"""
     n = weights[0].shape[0]
     mu = np.zeros(n)
@@ -294,6 +301,7 @@ def propagate(weights, kmax: int = 6, emax: int = 3, use_tau: bool = True, kap4=
     rows = []
     for W in weights:
         m, S, T = linear_step(W.astype(np.float64), mu, C, U)
-        mu, C, U = state_to_h(m, S, T, kmax, emax, use_tau, kap4[len(rows)] if kap4 else None)
+        mu, C, U = state_to_h(m, S, T, kmax, emax, use_tau, kap4[len(rows)] if kap4 else None,
+                              k4birth[len(rows)] if k4birth else None)
         rows.append(mu)
     return np.stack(rows)
