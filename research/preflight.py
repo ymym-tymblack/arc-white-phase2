@@ -40,7 +40,7 @@ def main():
     sys.modules["cand"] = mod
     spec.loader.exec_module(mod)
     ok = True
-    for width, depth in ((1024, 16), (1024, 16), (1024, 24), (1024, 32), (256, 8), (256, 32)):
+    for width, depth in ((1024, 16), (1024, 16), (1024, 24), (1024, 32), (1024, 48), (256, 8), (256, 32)):
         mlp = build_mlp(width, depth, seed=1)
         est = mod.Estimator()
         est.setup(SetupContext(width=width, depth=depth, flop_budget=B, api_version="1.0",
