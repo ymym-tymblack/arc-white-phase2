@@ -122,9 +122,11 @@ class Estimator(BaseEstimator):
     # 古い家族の共有基底化: 年齢 age_old に達した家族は、全員で共有する n×rank_old の基底 U に
     # 射影して持つ(M ≈ U F)。輸送は U だけを運べばよく(X = U F なら T X = (T U) F で厳密)、
     # 家族ごとの n³ の行列積が n² r に減る。None なら使わない。
-    age_old = None
+    # mini で探索(0〜11 番)し検証(12〜39 番): 基底化なし 1.540e-8 → age 6・階数 256・作り直しなし 1.382e-8。
+    # 作り直す版より、最初の基底を運び続ける版の方が安く(C/B -0.006)誤差も小さかった。
+    age_old = 6
     rank_old = 256
-    rebuild_old = True  # True: 家族が入るたびに基底を作り直す / False: 最初の基底を運び続ける
+    rebuild_old = False  # True: 家族が入るたびに基底を作り直す / False: 最初の基底を運び続ける
     # κ4 → 3 次の誕生。どちらも T_ijk = K_ij c2_k + K_ik c2_j + K_jk c2_i(K は対称、対角 0)の形:
     #  (a) (2,1,1) 型 κ̃4[z_i,z_j,z_k,z_k] ≈ λ ρ_ij、λ = beta_k4 · ω: K += (λ/2) c1 ρ_off c1
     #  (b) 放射部分 κ̃4_iijj = ω/3 と ρ の辺 1 本の経路: K += (ω/12)(c3 ρ_off c1 + c1 ρ_off c3)
