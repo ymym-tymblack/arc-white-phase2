@@ -13,6 +13,8 @@ from mlp_kprop.mlp import MLP
 if __name__ == "__main__":
     torch.set_grad_enabled(False)
     i, L = int(sys.argv[1]), int(sys.argv[2])
+    kind = Kind[sys.argv[3]] if len(sys.argv) > 3 else Kind.SIMPLE
+    tag = "" if kind == Kind.SIMPLE else "_" + kind.name.lower()
     d = np.load(f"/kaggle/ext/dumps/mlp_{i:03d}.npz")
     w = d["weights"][:L]
     n = w.shape[1]
@@ -23,17 +25,19 @@ if __name__ == "__main__":
         mlp.Ws[j].weight.data = torch.from_numpy(w[j].astype(np.float64).T).contiguous().to(dev)
     K_in = {1: torch.zeros(n, dtype=torch.float64, device=dev),
             2: torch.eye(n, dtype=torch.float64, device=dev)}
-    K = mlp_kprop(mlp, K_in, k_max=3, kind=Kind.SIMPLE, factor=True, output_all=True,
+    K = mlp_kprop(mlp, K_in, k_max=3, kind=kind, factor=True, output_all=True,
                   up_to_layer=f"act{L - 1}")
     out = {}
     for l in range(1, L + 1):
         t = K[f"pre{l - 1}"]
         out[f"m_{l}"] = t[1].to_tensor().cpu().numpy()
+        out[f"hmean_{l}"] = K[f"act{l - 1}"][1].to_tensor().cpu().numpy()
+        out[f"Cact_{l}"] = K[f"act{l - 1}"][2].to_tensor().float().cpu().numpy()
         out[f"var_{l}"] = t[2].get_dslice((2,)).cpu().numpy()
         if 3 in t:
             out[f"D3_{l}"] = t[3].get_dslice((3,)).cpu().numpy()
             out[f"D21_{l}"] = t[3].get_dslice((2, 1)).float().cpu().numpy()
         if 4 in t:
             out[f"K4_{l}"] = t[4].get_dslice((4,)).cpu().numpy()
-    np.savez(f"/kaggle/ext/ref/int_{i:03d}.npz", **out)
+    np.savez(f"/kaggle/ext/ref/int{tag}_{i:03d}.npz", **out)
     print("saved", sorted(out)[:6], "...", flush=True)

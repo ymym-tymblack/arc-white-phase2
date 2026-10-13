@@ -25,7 +25,7 @@ DUMPS = Path("/kaggle/ext/dumps")
 OUT = Path("/kaggle/ext/ref")
 
 
-def reference_means(weights: np.ndarray, k_max: int, device) -> np.ndarray:
+def reference_means(weights: np.ndarray, k_max: int, device, kind=Kind.SIMPLE) -> np.ndarray:
     """競技の MLP(全 L 層に ReLU)を参照実装の規約(最後の線形層の後は活性化なし)に合わせて
     L+1 層として作り、act0..act{L-1} の平均(1 次キュムラント)を返す。"""
     L, n = weights.shape[0], weights.shape[1]
@@ -36,33 +36,39 @@ def reference_means(weights: np.ndarray, k_max: int, device) -> np.ndarray:
         mlp.Ws[i].weight.data = torch.from_numpy(weights[i].astype(np.float64).T).contiguous().to(device)
     K_in = {1: torch.zeros(n, dtype=torch.float64, device=device),
             2: torch.eye(n, dtype=torch.float64, device=device)}
-    K = mlp_kprop(mlp, K_in, k_max=k_max, kind=Kind.SIMPLE, factor=(k_max >= 3),
+    K = mlp_kprop(mlp, K_in, k_max=k_max, kind=kind, factor=(k_max >= 3),
                   output_all=True, up_to_layer=f"act{L - 1}")
     return torch.stack([K[f"act{i}"][1].to_tensor() for i in range(L)]).cpu().numpy()
 
 
 def main():
     torch.set_grad_enabled(False)
-    k_max = int(sys.argv[1])
+    # 引数: <k_max>[:SIMPLE|AUGMENT] <MLP番号...>
+    k_spec = sys.argv[1].split(":")
+    k_max = int(k_spec[0])
+    kind = Kind[k_spec[1]] if len(k_spec) > 1 else Kind.SIMPLE
+    tag = f"k{k_max}" if kind == Kind.SIMPLE else f"k{k_max}{kind.name.lower()}"
     idxs = [int(x) for x in sys.argv[2:]]
     device = torch.device("cuda")
     OUT.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("WANDB_MODE", "offline")
     import wandb
 
-    run = wandb.init(project="arc-whest-phase2", name=f"kprop_reference_k{k_max}",
-                     config=dict(k_max=k_max, idxs=idxs, kind="SIMPLE", device="RTX 5090"),
+    run = wandb.init(project="arc-whest-phase2", name=f"kprop_reference_{tag}",
+                     config=dict(k_max=k_max, idxs=idxs, kind=kind.name, device="RTX 5090"),
                      dir="/kaggle/ext/wandb")
     for i in idxs:
         d = np.load(DUMPS / f"mlp_{i:03d}.npz")
         t = time.time()
-        pred = reference_means(d["weights"], k_max, device)
+        torch.cuda.reset_peak_memory_stats()
+        pred = reference_means(d["weights"], k_max, device, kind)
         dt = time.time() - t
         truth = d["all_layer_means"]
         per_layer = ((pred - truth) ** 2).mean(1)
-        np.savez(OUT / f"kprop_k{k_max}_{i:03d}.npz", pred=pred)
-        print(f"MLP {i}: 最終層 MSE {per_layer[-1]:.3e} 全層 {per_layer.mean():.3e} ({dt:.1f}s)",
-              flush=True)
+        np.savez(OUT / f"kprop_{tag}_{i:03d}.npz", pred=pred)
+        mem = torch.cuda.max_memory_allocated() / 2**30
+        print(f"{tag} MLP {i}: 最終層 MSE {per_layer[-1]:.3e} 全層 {per_layer.mean():.3e} "
+              f"({dt:.1f}s, GPU {mem:.1f}GB)", flush=True)
         wandb.log({"mlp": i, "final_mse": per_layer[-1], "all_mse": per_layer.mean(), "sec": dt,
                    **{f"layer_mse/{l + 1}": v for l, v in enumerate(per_layer)}})
     run.finish()
