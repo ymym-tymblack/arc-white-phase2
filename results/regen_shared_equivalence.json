@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "width": 64,
+  "depth": 8,
+  "rank_old": 64,
+  "age_old": 2,
+  "checks": {
+    "mean_max_abs": 1.430511474609375e-06,
+    "D3_max_abs": 1.704692840576172e-05,
+    "D21_max_abs": 5.826354026794434e-06,
+    "k4_lambda_max_abs": 1.341104507446289e-07,
+    "k4_gdiag_max_abs": 1.430511474609375e-06
+  }
+}

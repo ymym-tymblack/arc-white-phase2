@@ -1,0 +1,12 @@
+{
+  "bitwise_equal": true,
+  "flops_equal": true,
+  "maximum_difference": 0.0,
+  "flops": 933935166840,
+  "shape": [
+    16,
+    1024
+  ],
+  "old_source_sha256": "fae93ed4f9abbcadf824465cbe224c3a3e4d3fc543af0b59aac06bf82e91df9e",
+  "new_source_sha256": "527379916927ca6bc9dddda753b49908af1cb66a3780a5e0c7178e74cf9da767"
+}

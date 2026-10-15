@@ -1,0 +1,425 @@
+{
+  "ok": true,
+  "seed": 504211,
+  "checks": [
+    {
+      "name": "Sym6 diagonal",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "Sym6 K22 offdiagonal",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "Sym6 K31 offdiagonal",
+      "max_abs": 2.220446049250313e-16,
+      "relative_to_max": 1.7579334157595573e-16,
+      "ok": true
+    },
+    {
+      "name": "Sym6 K211 distinct",
+      "max_abs": 5.551115123125783e-17,
+      "relative_to_max": 7.652794079262472e-17,
+      "ok": true
+    },
+    {
+      "name": "K31 standardization",
+      "max_abs": 3.469446951953614e-18,
+      "relative_to_max": 6.939810719707581e-17,
+      "ok": true
+    },
+    {
+      "name": "detect missing Sym6 /6",
+      "max_abs": 19.15391567463039,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "detect K31 missing /2",
+      "max_abs": 1.2631002001238576,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "raw postactivation K22",
+      "max_abs": 1.7763568394002505e-14,
+      "relative_to_max": 8.149510998757853e-16,
+      "ok": true
+    },
+    {
+      "name": "raw postactivation K4",
+      "max_abs": 1.0658141036401503e-14,
+      "relative_to_max": 4.889706599254712e-16,
+      "ok": true
+    },
+    {
+      "name": "raw core diagonal vs dense Frobenius projection",
+      "max_abs": 8.881784197001252e-15,
+      "relative_to_max": 6.648331157602035e-16,
+      "ok": true
+    },
+    {
+      "name": "detect forbidden postvariance division",
+      "max_abs": 4590.144868261591,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "birth distinct plus repeated correction",
+      "max_abs": 3.2526065174565133e-19,
+      "relative_to_max": 7.228806041224678e-17,
+      "ok": true
+    },
+    {
+      "name": "birth Uiii zero",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "birth Uiik counted once",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "young folded D3 vs transported dense tensor",
+      "max_abs": 1.3010426069826053e-18,
+      "relative_to_max": 4.161513384087414e-16,
+      "ok": true
+    },
+    {
+      "name": "young folded D21 vs transported dense tensor",
+      "max_abs": 8.673617379884035e-19,
+      "relative_to_max": 2.774342256058276e-16,
+      "ok": true
+    },
+    {
+      "name": "young D21 diagonal equals D3",
+      "max_abs": 8.673617379884035e-19,
+      "relative_to_max": 2.7743422560582775e-16,
+      "ok": true
+    },
+    {
+      "name": "young detect missing metric/var in u",
+      "max_abs": 0.027904414207216052,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "young detect feed factor2",
+      "max_abs": 0.003126368911746064,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "shared folded D3 vs transported dense tensor",
+      "max_abs": 1.734723475976807e-18,
+      "relative_to_max": 1.0760293564335521e-15,
+      "ok": true
+    },
+    {
+      "name": "shared folded D21 vs transported dense tensor",
+      "max_abs": 1.5178830414797062e-18,
+      "relative_to_max": 9.41525686879358e-16,
+      "ok": true
+    },
+    {
+      "name": "shared D21 diagonal equals D3",
+      "max_abs": 2.168404344971009e-19,
+      "relative_to_max": 1.3450366955419416e-16,
+      "ok": true
+    },
+    {
+      "name": "shared detect missing metric/var in u",
+      "max_abs": 0.008738257552171608,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "shared detect feed factor2",
+      "max_abs": 0.0016121525547652918,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "exact diagonal core transport",
+      "max_abs": 5.551115123125783e-17,
+      "relative_to_max": 4.6608206299442273e-17,
+      "ok": true
+    },
+    {
+      "name": "regenerated lambda fixed point",
+      "max_abs": 6.938893903907228e-18,
+      "relative_to_max": 1.5276319143281875e-16,
+      "ok": true
+    },
+    {
+      "name": "network layer0 lambda",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 transported diagonal",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 metric",
+      "max_abs": 8.231119070778448e-07,
+      "relative_to_max": 3.039052648442257e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer0 standardized omega",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 raw core projection",
+      "max_abs": 8.845792015543807e-09,
+      "relative_to_max": 5.324547490886028e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer1 lambda",
+      "max_abs": 3.380615926085184e-10,
+      "relative_to_max": 7.133276469061578e-09,
+      "ok": true
+    },
+    {
+      "name": "network layer1 transported diagonal",
+      "max_abs": 2.498595563782402e-08,
+      "relative_to_max": 2.062289871216509e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer1 metric",
+      "max_abs": 8.35090021578111e-07,
+      "relative_to_max": 3.160318799865959e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer1 standardized omega",
+      "max_abs": 6.1572435539059e-08,
+      "relative_to_max": 3.8499902313911814e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer1 raw core projection",
+      "max_abs": 1.71247098584848e-08,
+      "relative_to_max": 1.3531576887691074e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer2 lambda",
+      "max_abs": 1.7382028177914677e-09,
+      "relative_to_max": 3.197484206410777e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer2 transported diagonal",
+      "max_abs": 2.108644248099978e-08,
+      "relative_to_max": 2.0116126638785408e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer2 metric",
+      "max_abs": 9.461377192820919e-07,
+      "relative_to_max": 3.412776737629201e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer2 standardized omega",
+      "max_abs": 6.613941888611308e-08,
+      "relative_to_max": 2.69169520630016e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer2 raw core projection",
+      "max_abs": 1.5328926850077806e-08,
+      "relative_to_max": 1.1878847416105333e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer3 lambda",
+      "max_abs": 1.0050067028588572e-10,
+      "relative_to_max": 1.65887382606325e-09,
+      "ok": true
+    },
+    {
+      "name": "network layer3 transported diagonal",
+      "max_abs": 2.180173984400735e-08,
+      "relative_to_max": 1.8937240925394324e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer3 metric",
+      "max_abs": 9.314933815396387e-07,
+      "relative_to_max": 3.3441800561839156e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer3 standardized omega",
+      "max_abs": 1.0039448539167495e-07,
+      "relative_to_max": 3.084449239593099e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer3 raw core projection",
+      "max_abs": 1.1298066426856934e-08,
+      "relative_to_max": 6.335496508557635e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer4 lambda",
+      "max_abs": 2.951496685943411e-09,
+      "relative_to_max": 4.3053779335154396e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer4 transported diagonal",
+      "max_abs": 2.026728547488421e-08,
+      "relative_to_max": 1.4148459087746729e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer4 metric",
+      "max_abs": 9.97773929700685e-07,
+      "relative_to_max": 3.5283373576071575e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer4 standardized omega",
+      "max_abs": 1.6154038201543486e-07,
+      "relative_to_max": 3.5418659578228697e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer4 raw core projection",
+      "max_abs": 1.1441905534148589e-08,
+      "relative_to_max": 9.126405724706564e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer5 lambda",
+      "max_abs": 6.856734444116164e-09,
+      "relative_to_max": 1.1645859151848758e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer5 transported diagonal",
+      "max_abs": 1.2475076721640832e-08,
+      "relative_to_max": 1.3237186907544537e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer5 metric",
+      "max_abs": 1.1009101097414487e-06,
+      "relative_to_max": 4.171661260807317e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer5 standardized omega",
+      "max_abs": 1.8934903539546966e-07,
+      "relative_to_max": 3.592944052362843e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer5 raw core projection",
+      "max_abs": 1.4890244745546788e-08,
+      "relative_to_max": 1.2772616314960574e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer6 lambda",
+      "max_abs": 6.0253032563295505e-09,
+      "relative_to_max": 9.628945556388371e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer6 transported diagonal",
+      "max_abs": 1.533581202306511e-08,
+      "relative_to_max": 1.5564872471921448e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer6 metric",
+      "max_abs": 1.0913759806996381e-06,
+      "relative_to_max": 3.7512880638397545e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer6 standardized omega",
+      "max_abs": 4.81559788378938e-07,
+      "relative_to_max": 4.955547064187332e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer6 raw core projection",
+      "max_abs": 8.796523162657444e-09,
+      "relative_to_max": 5.653515270572959e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer7 lambda",
+      "max_abs": 1.2793363590724027e-11,
+      "relative_to_max": 1.8505957671767707e-10,
+      "ok": true
+    },
+    {
+      "name": "network layer7 transported diagonal",
+      "max_abs": 1.4217947097439065e-08,
+      "relative_to_max": 1.2462934425347752e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer7 metric",
+      "max_abs": 1.0367130625077436e-06,
+      "relative_to_max": 3.567135498340047e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer7 standardized omega",
+      "max_abs": 3.30427593064897e-07,
+      "relative_to_max": 3.538061844312146e-07,
+      "ok": true
+    }
+  ],
+  "runtime": {
+    "network": "/kaggle/ext/closure/network_n128_s26051503.npz",
+    "candidate": "/kaggle/arc-white-phase2/candidates/k3_factored.py",
+    "kwargs": {
+      "directional_k4": true,
+      "collect": true
+    },
+    "flops": 685979265,
+    "residual_wall_time_s": 0.18005424851435237,
+    "recurrence_layers": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "projection_layers": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  }
+}
