@@ -26,6 +26,7 @@ directional_k4=True のときは G=diag(g)+λ C_off、κ4=(1/6)Sym6(G,I) を使�
 g は raw postactivation の K4/K22 行和から求め、次層の対角を正確に輸送する。
 再生するのは非対角だけで、postactivation 分散の逆数による射影はしない。
 κ4→κ3 の Sym3(K⊗u) は同じ A/M の読み出しへ折り込む(古い共有基底の家族も同様)。
+単変量の raw moment は正の 12 次 Hermite 密度を解析積分し、中心化・標準化で入力平均と分散を保つ。
 """
 
 from __future__ import annotations
@@ -126,24 +127,86 @@ def _pair_terms(cA, cB, R, kmax, t_iij, t_ijj, tdiag, k4, k31=None):
     return out
 
 
-def _relu_power_coefficients(m, var, sigma, Phi, phi, he, power, top):
-    """ReLU の raw power の Hermite 係数。相殺しやすいベクトルだけ倍精度にする。"""
-    m, var, sigma, Phi, phi = (
-        x.astype(fnp.float64) for x in (m, var, sigma, Phi, phi)
-    )
-    moments = [Phi, m * Phi + sigma * phi]
-    for p in range(2, power + 1):
-        moments.append(m * moments[-1] + float(p - 1) * var * moments[-2])
-    coeff = [moments[power]]
-    for k in range(1, top + 1):
-        if k <= power:
-            coeff.append(
-                float(math.factorial(power) // math.factorial(power - k))
-                * sigma ** k * moments[power - k]
+# H_i H_j の積公式。対角の 1/2 をここに含め、各 a_i a_j は層ごとに一度だけ計算する。
+_POSITIVE_HERMITE_PRODUCTS = tuple(
+    (
+        i - 3, j - 3,
+        tuple(
+            (
+                i + j - 2 * r,
+                (0.5 if i == j else 1.0)
+                * math.factorial(r) * math.comb(i, r) * math.comb(j, r),
             )
-        else:
-            coeff.append(float(math.factorial(power)) * sigma ** power * phi * he[k - power - 1])
-    return coeff
+            for r in range(min(i, j) + 1)
+        ),
+    )
+    for i in range(3, 7)
+    for j in range(i, 7)
+)
+_RELU_POWER_FACTORS = tuple(
+    tuple(float(math.factorial(p) // math.factorial(p - k)) for k in range(p + 1))
+    for p in range(5)
+)
+_FP64_VARIANCE_ROUNDOFF = 64.0 * 2.0 ** -52
+_FP32_VARIANCE_ROUNDOFF = 64.0 * 2.0 ** -23
+
+
+def _positive_relu_powers(m, var, sigma, tdiag, omega, through):
+    """正の D=1+u+u²/2 を正規化・標準化した分布の E[ReLU(X)^p] (FP64)。
+
+    u の 2 次補正は中心化・標準化後の H3..H8 を
+    τ/6, ω/24, 0, τ²/72, τω/144, ω²/1152 にする。
+    var は呼び出し規約のために残し、σ から有効分散を一度だけ作る。
+    """
+    m, sigma, t, o = (
+        fnp.asarray(x, dtype=fnp.float64) for x in (m, sigma, tdiag, omega)
+    )
+    tt, to, oo = t * t, t * o, o * o
+    a = (t / 6.0 - to / 4.0,
+         o / 24.0 - tt / 8.0 - oo / 16.0,
+         -to / 12.0, -oo / 72.0)
+    b = [1.0, 0.0, 0.0, *a, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    for i, j, terms in _POSITIVE_HERMITE_PRODUCTS:
+        product = a[i] * a[j]
+        for degree, factor in terms:
+            b[degree] = b[degree] + factor * product
+    Z = b[0]
+    mq = b[1] / Z
+    vq = 1.0 + 2.0 * b[2] / Z - mq * mq
+    if not float(fnp.min(vq)) > 0.0:
+        raise ValueError("positive Hermite marginal variance must be positive")
+    s_eff = sigma / fnp.sqrt(vq)
+    m_eff = m - s_eff * mq
+    alpha_eff = m_eff / s_eff
+    Phi = fnp.asarray(flops.stats.norm.cdf(alpha_eff), dtype=fnp.float64)
+    phi = fnp.asarray(flops.stats.norm.pdf(alpha_eff), dtype=fnp.float64)
+    # flopscope の cdf は (1+erf)/2 で、深い負の裾では桁落ちする。
+    # Φ(-x)/φ(x) の Laplace 連分数を裾だけに使い、微小な raw moment の符号を保つ。
+    tail_mask = alpha_eff < -4.0
+    if bool(fnp.any(tail_mask)):
+        x = fnp.maximum(-alpha_eff, 4.0)
+        fraction = 0.0
+        for k in range(32, 0, -1):
+            fraction = float(k) / (x + fraction)
+        Phi = fnp.where(tail_mask, phi / (x + fraction), Phi)
+    he = _hermite_neg_alpha(alpha_eff, 10)
+    s_powers = [None, s_eff, s_eff * s_eff]
+    for p in range(3, through + 1):
+        s_powers.append(s_powers[-1] * s_eff)
+    moments = [Phi, m_eff * Phi + s_eff * phi]
+    for p in range(2, through + 1):
+        moments.append(m_eff * moments[-1] + float(p - 1) * s_powers[2] * moments[-2])
+    raw_powers = []
+    for p in range(1, through + 1):
+        factors = _RELU_POWER_FACTORS[p]
+        value = b[0] * moments[p]
+        for k in range(1, p + 1):
+            value = value + factors[k] * s_powers[k] * moments[p - k] * b[k]
+        tail = b[p + 1]
+        for k in range(p + 2, 13):
+            tail = tail + b[k] * he[k - p - 1]
+        raw_powers.append((value + factors[p] * s_powers[p] * phi * tail) / Z)
+    return raw_powers
 
 
 class Estimator(BaseEstimator):
@@ -242,7 +305,15 @@ class Estimator(BaseEstimator):
             # --- 線形層: z の平均・共分散 ---
             m = w.T @ mu
             S = fnp.einsum("ij,ia,jb->ab", C, w, w)
-            var = fnp.maximum(fnp.diag(S), 1e-12)
+            if regen:
+                raw_pre_var = fnp.diag(S)
+                # 共分散の対角スケールに対する FP32 丸め誤差だけを許す。
+                pre_roundoff = _FP32_VARIANCE_ROUNDOFF * fnp.max(fnp.abs(raw_pre_var))
+                if not float(fnp.min(raw_pre_var) + pre_roundoff) >= 0.0:
+                    raise ValueError("directional_k4 preactivation variance exceeds negative roundoff allowance")
+                var = fnp.maximum(raw_pre_var, 1e-12)
+            else:
+                var = fnp.maximum(fnp.diag(S), 1e-12)
             sigma = fnp.sqrt(var)
             alpha = m / sigma
             phi = flops.stats.norm.pdf(alpha).astype(f32)
@@ -253,7 +324,7 @@ class Estimator(BaseEstimator):
                 WW = w * w
                 metric = fnp.sum(WW, axis=0)
                 tg = fnp.matmul(WW.T, core_diag)
-                tv = fnp.diag(S) - fnp.matmul(WW.T, var_prev)
+                tv = raw_pre_var - fnp.matmul(WW.T, var_prev)
                 strength = 0.0
                 if self.regen_start <= layer <= self.regen_end:
                     position = 3.0 * layer / max(depth - 1, 1)
@@ -421,20 +492,19 @@ class Estimator(BaseEstimator):
             e2_0 = (m * m + var) * Phi + m * sigma * phi
             raw_mu = raw_ez2 = raw_ez3 = raw_ez4 = raw_var = None
             if regen:
-                raw_powers = []
-                for power in range(1, 3 if last else 5):
-                    coeff = _relu_power_coefficients(m, var, sigma, Phi, phi, he, power, 6)
-                    raw_powers.append(
-                        coeff[0] + coeff[3] * tdiag / 6.0
-                        + coeff[6] * tdiag * tdiag / 72.0 + coeff[4] * omega / 24.0
-                    )
+                raw_powers = _positive_relu_powers(
+                    m, var, sigma, tdiag, omega, 2 if last else 4
+                )
                 raw_mu, raw_ez2 = raw_powers[:2]
                 mu_new = raw_mu.astype(f32)
-                ez2 = raw_ez2.astype(f32)
                 if not last:
                     raw_ez3, raw_ez4 = raw_powers[2:]
-                raw_var = fnp.maximum(raw_ez2 - raw_mu * raw_mu, 0.0)
-                var_post = raw_var.astype(f32)
+                raw_mean_sq = raw_mu * raw_mu
+                raw_var = raw_ez2 - raw_mean_sq
+                roundoff = _FP64_VARIANCE_ROUNDOFF * fnp.maximum(fnp.abs(raw_ez2), raw_mean_sq)
+                if not float(fnp.min(raw_var + roundoff)) >= 0.0:
+                    raise ValueError("positive Hermite ReLU variance exceeds negative roundoff allowance")
+                var_post = fnp.maximum(raw_var, 0.0).astype(f32)
             else:
                 mu_new = c[0] + c[3] * tdiag / 6.0 + c[6] * tdiag * tdiag / 72.0 + c[4] * (omega / 24.0)
                 ez2 = (
@@ -452,6 +522,9 @@ class Estimator(BaseEstimator):
                 if regen:
                     self.features[-1].update({
                         "k4_lambda": lam, "k4_gdiag": dG, "k4_metric": metric, "k4_omega": omega,
+                        "k4_raw_mean": raw_mu, "k4_raw_second": raw_ez2,
+                        "k4_raw_variance": raw_var,
+                        "k4_raw_pre_variance": raw_pre_var,
                     })
             mu = mu_new
             rows.append(mu)
@@ -498,8 +571,8 @@ class Estimator(BaseEstimator):
                 )
                 fnp.fill_diagonal(post_k22, 0.0)
                 post_k4 = (
-                    raw_ez4 - 4.0 * raw_mu * raw_ez3 + 6.0 * raw_mu * raw_mu * raw_ez2
-                    - 3.0 * raw_mu ** 4 - 3.0 * raw_var ** 2
+                    raw_ez4 - 4.0 * raw_mu * raw_ez3 + 6.0 * raw_mean_sq * raw_ez2
+                    - 3.0 * raw_mean_sq * raw_mean_sq - 3.0 * raw_var ** 2
                 )
                 H = post_k4 + fnp.sum(post_k22, axis=1)
                 core_diag = (

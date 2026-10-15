@@ -1,0 +1,19 @@
+{
+  "error": "positive Hermite ReLU variance exceeds negative roundoff allowance",
+  "layer": 12,
+  "entries": [
+    {
+      "neuron": 215,
+      "m": -5.101906776428223,
+      "var": 0.3365713953971863,
+      "sigma": 0.5801477432250977,
+      "alpha": -8.794151306152344,
+      "tdiag": -0.18448981642723083,
+      "omega": 0.03534797579050064,
+      "raw_mu": 5.567953143001923e-18,
+      "raw_ez2": -1.0210787308178216e-17,
+      "raw_var": -1.0210787308178216e-17,
+      "roundoff": 1.4510401496434918e-31
+    }
+  ]
+}

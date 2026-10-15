@@ -1,0 +1,10 @@
+{
+  "selection": "Before validation/final prediction inspection: fast8 overall best, best k3leg_rank16, best age_old other than7, plus the original baseline.",
+  "labels": ["baseline", "fast8_best", "rank16_best", "age8_best"],
+  "configs": [
+    {"directional_k4": false},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 1.2, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 1.0, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 32},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 1.2, "regen_p1": 0.8, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 1.0, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 16},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 1.2, "regen_p1": 0.8, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 1.0, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 8, "rank_old": 256, "k3leg_rank": 32}
+  ]
+}

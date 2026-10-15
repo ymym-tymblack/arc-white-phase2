@@ -1,15 +1,17 @@
 """Deterministic tiny-tensor audit of directional fourth-cumulant regeneration.
 
-Run ``python research/regen_audit.py`` for algebra alone.  Optionally add
-``--network weights.npz --kwargs '{"regen_p0":0.8}'`` to inspect the actual
-candidate's collected recurrence.  This program never fetches data or samples
-an input distribution; finite weighted fixtures are exact discrete moments.
+Run ``uv run --with scipy python research/regen_audit.py`` for tensor algebra, exact second-order
+coefficient checks, and deterministic positive-marginal quadrature. Optionally
+add ``--network weights.npz --kwargs '{"regen_p0":0.8}'`` to inspect the actual
+candidate's collected recurrence. No input distribution is sampled.
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
+from fractions import Fraction
+import math
 from pathlib import Path
 import sys
 
@@ -244,7 +246,188 @@ def audit_feed(audit, rng, covariance, metric, lam, fourth):
         audit.sensitive(f"{mode} detect feed factor2", 2.0 * d21, expected21)
 
 
-def audit_network(audit, args):
+def audit_positive_coefficients(audit):
+    """Exact ordinary-polynomial algebra, independent of Hermite products.
+
+    Keys are (tau degree, omega degree, q degree); retain total parameter order
+    at most two. Gaussian integration and affine standardization are formal
+    rational operations, so no finite-difference cancellation hides a term.
+    """
+    def add(*terms):
+        result = {}
+        for term in terms:
+            for key, value in term.items():
+                result[key] = result.get(key, Fraction(0)) + value
+        return {key: value for key, value in result.items() if value}
+
+    def scale(term, value):
+        return {key: coefficient * value for key, coefficient in term.items()
+                if coefficient * value}
+
+    def multiply(left, right):
+        result = {}
+        for (lt, lo, lq), lv in left.items():
+            for (rt, ro, rq), rv in right.items():
+                if lt + rt + lo + ro <= 2:
+                    key = (lt + rt, lo + ro, lq + rq)
+                    result[key] = result.get(key, Fraction(0)) + lv * rv
+        return {key: value for key, value in result.items() if value}
+
+    def expectation(term):
+        result = {}
+        for (t, o, q), value in term.items():
+            if q % 2 == 0:
+                moment = Fraction(math.factorial(q), 2**(q // 2) * math.factorial(q // 2))
+                key = (t, o, 0)
+                result[key] = result.get(key, Fraction(0)) + value * moment
+        return {key: value for key, value in result.items() if value}
+
+    one = {(0, 0, 0): Fraction(1)}
+    q = {(0, 0, 1): Fraction(1)}
+    tau = {(1, 0, 0): Fraction(1)}
+    omega = {(0, 1, 0): Fraction(1)}
+    h = [one, q]
+    for k in range(1, 6):
+        h.append(add(multiply(q, h[-1]), scale(h[-2], -k)))
+    tau2, mixed, omega2 = multiply(tau, tau), multiply(tau, omega), multiply(omega, omega)
+    coefficients = (
+        add(scale(tau, Fraction(1, 6)), scale(mixed, Fraction(-1, 4))),
+        add(scale(omega, Fraction(1, 24)), scale(tau2, Fraction(-1, 8)),
+            scale(omega2, Fraction(-1, 16))),
+        scale(mixed, Fraction(-1, 12)),
+        scale(omega2, Fraction(-1, 72)),
+    )
+    u = add(*(multiply(coefficient, h[k]) for k, coefficient in enumerate(coefficients, 3)))
+    density = add(one, u, scale(multiply(u, u), Fraction(1, 2)))
+    z = expectation(density)
+    z_delta = add(z, scale(one, -1))
+    inverse_z = add(one, scale(z_delta, -1), multiply(z_delta, z_delta))
+    mean = multiply(expectation(multiply(q, density)), inverse_z)
+    variance = add(multiply(expectation(multiply(multiply(q, q), density)), inverse_z),
+                   scale(multiply(mean, mean), -1))
+    variance_delta = add(variance, scale(one, -1))
+    inverse_sigma = add(one, scale(variance_delta, Fraction(-1, 2)),
+                        scale(multiply(variance_delta, variance_delta), Fraction(3, 8)))
+    centered_q = multiply(add(q, scale(mean, -1)), inverse_sigma)
+    expected = {
+        0: one,
+        3: scale(tau, Fraction(1, 6)),
+        4: scale(omega, Fraction(1, 24)),
+        6: scale(tau2, Fraction(1, 72)),
+        7: scale(mixed, Fraction(1, 144)),
+        8: scale(omega2, Fraction(1, 1152)),
+    }
+    standardized_h = [one, centered_q]
+    for k in range(1, 12):
+        standardized_h.append(add(multiply(centered_q, standardized_h[-1]),
+                                  scale(standardized_h[-2], -k)))
+    parameter_keys = [(t, o, 0) for t in range(3) for o in range(3 - t)]
+    for k, hermite in enumerate(standardized_h):
+        coefficient = scale(multiply(expectation(multiply(hermite, density)), inverse_z),
+                            Fraction(1, math.factorial(k)))
+        residual = add(coefficient, scale(expected.get(k, {}), -1))
+        audit.compare(f"positive standardized H{k} exact order2",
+                      [float(residual.get(key, 0)) for key in parameter_keys],
+                      np.zeros(len(parameter_keys)), atol=0, rtol=0)
+
+
+def load_candidate(path):
+    sys.path.insert(0, str(ROOT))
+    spec = importlib.util.spec_from_file_location("directional_audit_candidate", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def audit_positive_quadrature(audit, args, module):
+    """Integrate the literal positive density, never its Hermite expansion."""
+    import flopscope as flops
+    import flopscope.numpy as fnp
+    from scipy.integrate import quad
+    from scipy.special import eval_hermitenorm
+
+    cases = [
+        ("gaussian", 0.6, 1.7, 0.0, 0.0),
+        ("gaussian_tail", -2.0, 0.8, 0.0, 0.0),
+        ("observed_layer4_neuron32", -1.8899534941, 1.0, -.49704274535, .22351856530),
+        ("observed_layer5_neuron111", -2.0188198090, 1.0, -.46382278204, .15745250881),
+        ("observed_width1024_tail", -5.101906776428223, .5801477432250977,
+         -.18448981642723083, .03534797579050064),
+        ("gaussian_far_tail", -12.0, 1.0, 0.0, 0.0),
+        ("positive_tau", -.35, 1.3, .7, .4),
+        ("negative_tau", -.35, 1.3, -.7, .4),
+        ("negative_omega", 1.3, .6, .4, -.8),
+        ("negative_both_scaled", -.9, 2.1, -.65, -.3),
+        ("symmetric_negative_omega", 0.0, 1.0, 0.0, -1.0),
+    ]
+    expected, diagnostics = [], []
+    for name, m, sigma, tau, omega in cases:
+        a = (tau / 6 - tau * omega / 4,
+             omega / 24 - tau**2 / 8 - omega**2 / 16,
+             -tau * omega / 12, -omega**2 / 72)
+
+        def positive_polynomial(q):
+            u = sum(coefficient * eval_hermitenorm(k, q)
+                    for k, coefficient in enumerate(a, 3))
+            return .5 * (1 + (1 + u)**2)
+
+        def weighted(q):
+            return positive_polynomial(q) * math.exp(-q*q / 2) / math.sqrt(2 * math.pi)
+
+        def integral(function, lower=-np.inf, upper=np.inf):
+            return quad(lambda q: function(q) * weighted(q), lower, upper,
+                        epsabs=2e-11, epsrel=2e-11, limit=200)[0]
+
+        z = integral(lambda q: 1.0)
+        mean_q = integral(lambda q: q) / z
+        variance_q = integral(lambda q: (q - mean_q)**2) / z
+        if not (z >= 1.0 - 2e-11 and variance_q > 0):
+            raise ValueError(f"{name}: invalid independently integrated positive density")
+        effective_sigma = sigma / math.sqrt(variance_q)
+        effective_mean = m - effective_sigma * mean_q
+        cutoff = -effective_mean / effective_sigma
+        if cutoff > 0:
+            # Factor out the Gaussian tail and integrate at unit decay scale.
+            # An absolute quadrature tolerance on 1e-30 moments would prove nothing.
+            rate = max(1.0, cutoff)
+            factor = math.exp(-cutoff**2 / 2) / (math.sqrt(2 * math.pi) * z * rate)
+            moments = [
+                factor * (effective_sigma / rate)**p * quad(
+                    lambda v, p=p: v**p * positive_polynomial(cutoff + v / rate)
+                    * math.exp(-cutoff * v / rate - .5 * (v / rate)**2),
+                    0, np.inf, epsabs=2e-11, epsrel=2e-11, limit=200,
+                )[0] for p in range(1, 5)
+            ]
+        else:
+            moments = [integral(lambda q, p=p: (effective_mean + effective_sigma*q)**p,
+                                cutoff) / z for p in range(1, 5)]
+        expected.append(moments)
+        # Also exercise the independently integrated affine normalization.
+        audit.compare(f"positive quadrature {name} preactivation mean",
+                      integral(lambda q: effective_mean + effective_sigma*q) / z, m)
+        audit.compare(f"positive quadrature {name} preactivation variance",
+                      integral(lambda q: (effective_mean + effective_sigma*q - m)**2) / z,
+                      sigma**2)
+        diagnostics.append(dict(case=name, normalization=z, mean_q=mean_q,
+                                variance_q=variance_q, raw_powers=moments))
+
+    m, sigma, tau, omega = (np.array([case[i] for case in cases], dtype=np.float64)
+                             for i in range(1, 5))
+    with flops.BudgetContext(flop_budget=args.budget, wall_time_limit_s=args.wall, quiet=True):
+        vectors = [fnp.asarray(value, dtype=fnp.float64)
+                   for value in (m, sigma**2, sigma, tau, omega)]
+        powers = module._positive_relu_powers(*vectors, through=4)
+        actual = np.stack([np.asarray(power) for power in powers], axis=1)
+    for index, (name, *_rest) in enumerate(cases):
+        tiny = max(expected[index]) < 1e-10
+        audit.compare(f"positive marginal {name} raw powers1..4",
+                      actual[index], expected[index], atol=0.0 if tiny else 2e-9,
+                      rtol=5e-7 if tiny else 2e-9)
+    return diagnostics
+
+
+def audit_network(audit, args, module):
     # Imports and instrumented execution are needed only for this optional path.
     sys.path.insert(0, str(ROOT))
     import flopscope as flops
@@ -256,10 +439,7 @@ def audit_network(audit, args):
     if weights.ndim != 3 or weights.shape[1] != weights.shape[2]:
         raise ValueError("network NPZ must contain square weights[depth,input,output]")
     depth, n, _ = weights.shape
-    spec = importlib.util.spec_from_file_location("directional_audit_candidate", args.candidate)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    # Use the same imported implementation as the independent 1D audit.
     kwargs = json.loads(args.kwargs)
     if not isinstance(kwargs, dict):
         raise ValueError("--kwargs must be a JSON object")
@@ -285,9 +465,11 @@ def audit_network(audit, args):
     if not np.isfinite(prediction).all():
         raise ValueError("candidate prediction is nonfinite")
     g_prev, var_prev = np.zeros(n), np.ones(n)
-    recurrence_layers, projection_layers = [], []
+    recurrence_layers, projection_layers, variance_layers = [], [], []
     for layer, (w, feature) in enumerate(zip(weights, features)):
-        required = ("sigma", "k4_lambda", "k4_gdiag", "k4_metric", "k4_omega")
+        required = ("sigma", "alpha", "m", "tdiag", "var_post",
+                    "k4_lambda", "k4_gdiag", "k4_metric", "k4_omega",
+                    "k4_raw_pre_variance", "k4_raw_mean", "k4_raw_second", "k4_raw_variance")
         missing = [name for name in required if name not in feature]
         if missing:
             raise ValueError(f"layer {layer}: collect lacks {missing}")
@@ -310,6 +492,67 @@ def audit_network(audit, args):
         audit.compare(f"network layer{layer} metric", feature["k4_metric"], ww.sum(axis=0), **tolerance)
         audit.compare(f"network layer{layer} standardized omega", feature["k4_omega"],
                       ww.sum(axis=0) * dg / var**2, **tolerance)
+        # Audit the actual, unclamped positive-model moments, not the old signed
+        # closure. A finite var_post alone could conceal either variance clip.
+        raw_pre_variance = feature["k4_raw_pre_variance"]
+        raw_mean, raw_second, raw_variance = (
+            feature[key] for key in ("k4_raw_mean", "k4_raw_second", "k4_raw_variance"))
+        for name in ("k4_raw_pre_variance", "k4_raw_mean", "k4_raw_second", "k4_raw_variance"):
+            if feature[name].shape != (n,) or not np.isfinite(feature[name]).all():
+                raise ValueError(f"layer {layer}: {name} must be a finite width-{n} vector")
+        pre_rounding = float(64.0 * np.finfo(np.float32).eps) * float(np.max(np.abs(raw_pre_variance)))
+        pre_negatives = int(np.count_nonzero(raw_pre_variance < -pre_rounding))
+        audit.compare(f"network layer{layer} negative unclamped prevariances",
+                      pre_negatives, 0, atol=0, rtol=0)
+        rounding = 64.0 * np.finfo(np.float64).eps * np.maximum(
+            np.abs(raw_second), raw_mean**2)
+        negatives = int(np.count_nonzero(raw_variance < -rounding))
+        audit.compare(f"network layer{layer} raw variance identity", raw_variance,
+                      raw_second - raw_mean**2, atol=rounding, rtol=0)
+        audit.compare(f"network layer{layer} negative unclamped model variances",
+                      negatives, 0, atol=0, rtol=0)
+        audit.compare(f"network layer{layer} postvariance matches raw model",
+                      feature["var_post"], np.maximum(raw_variance, 0.0),
+                      atol=rounding, rtol=2.0 * np.finfo(np.float32).eps)
+
+        # Separately named historical signed-Edgeworth diagnosis: its negative
+        # variance is informative, but is not a failure of the repaired model.
+        alpha, m, sigma = feature["alpha"], feature["m"], feature["sigma"]
+        instrumented_alpha = fnp.asarray(alpha, dtype=fnp.float32)
+        pdf = np.asarray(flops.stats.norm.pdf(instrumented_alpha)).astype(np.float32).astype(np.float64)
+        cdf = np.asarray(flops.stats.norm.cdf(instrumented_alpha)).astype(np.float32).astype(np.float64)
+        tau, omega = feature["tdiag"], feature["k4_omega"]
+        signed_raw_mean = m * cdf + sigma * pdf * (
+            1.0 - alpha * tau / 6.0
+            + (alpha**4 - 6.0 * alpha**2 + 3.0) * tau**2 / 72.0
+            + (alpha**2 - 1.0) * omega / 24.0
+        )
+        signed_raw_second = (m * m + var) * cdf + m * sigma * pdf + 2.0 * var * pdf * (
+            tau / 6.0 - (alpha**3 - 3.0 * alpha) * tau**2 / 72.0 - alpha * omega / 24.0
+        )
+        signed_raw_variance = signed_raw_second - signed_raw_mean**2
+        signed_rounding = 64.0 * np.finfo(np.float64).eps * np.maximum(
+            np.abs(signed_raw_second), signed_raw_mean**2)
+        signed_negatives = np.flatnonzero(signed_raw_variance < -signed_rounding)
+        variance_layers.append(dict(
+            layer=layer, minimum_raw_variance=float(raw_variance.min()),
+            negative_variances=negatives,
+            minimum_raw_pre_variance=float(raw_pre_variance.min()),
+            prevariance_roundoff_allowance=pre_rounding, negative_prevariances=pre_negatives,
+            minimum_pearson_slack=float(np.min(omega + 2.0 - tau**2)),
+            negative_entries=[dict(neuron=int(i), alpha=float(alpha[i]), tau=float(tau[i]),
+                                   omega=float(omega[i]), raw_mean=float(raw_mean[i]),
+                                   raw_second=float(raw_second[i]), raw_variance=float(raw_variance[i]))
+                              for i in np.flatnonzero(raw_variance < -rounding)],
+            signed_edgeworth_diagnosis=dict(
+                minimum_raw_variance=float(signed_raw_variance.min()),
+                negative_variances=int(len(signed_negatives)),
+                negative_entries=[dict(neuron=int(i), alpha=float(alpha[i]), tau=float(tau[i]),
+                                       omega=float(omega[i]), raw_mean=float(signed_raw_mean[i]),
+                                       raw_second=float(signed_raw_second[i]),
+                                       raw_variance=float(signed_raw_variance[i]))
+                                  for i in signed_negatives]),
+        ))
         recurrence_layers.append(layer)
         if "k4_post_core_diag" in feature and "k4_post_K22" in feature:
             k22 = feature["k4_post_K22"]
@@ -329,7 +572,8 @@ def audit_network(audit, args):
             raise ValueError(f"layer {layer}: missing postactivation core/K22 needed for next recurrence")
     return dict(network=str(args.network), candidate=str(args.candidate), kwargs=kwargs,
                 flops=int(context.flops_used), residual_wall_time_s=float(context.residual_wall_time_s),
-                recurrence_layers=recurrence_layers, projection_layers=projection_layers)
+                recurrence_layers=recurrence_layers, projection_layers=projection_layers,
+                variance_layers=variance_layers)
 
 
 def main():
@@ -350,9 +594,13 @@ def main():
     audit_projection(audit, rng)
     audit_feed(audit, rng, covariance, metric, lam, fourth)
     audit_transport(audit, rng)
-    runtime = audit_network(audit, args) if args.network else None
+    audit_positive_coefficients(audit)
+    module = load_candidate(args.candidate)
+    quadrature = audit_positive_quadrature(audit, args, module)
+    runtime = audit_network(audit, args, module) if args.network else None
     ok = all(record["ok"] for record in audit.records)
-    report = dict(ok=ok, seed=args.seed, checks=audit.records, runtime=runtime)
+    report = dict(ok=ok, seed=args.seed, checks=audit.records,
+                  positive_quadrature=quadrature, runtime=runtime)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")

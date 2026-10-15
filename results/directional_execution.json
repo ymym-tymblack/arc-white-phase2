@@ -22,5 +22,40 @@
     "real_width128_report": "results/regen_audit_n128.json",
     "full_rank_shared_basis_report": "results/regen_shared_equivalence.json",
     "disabled_baseline_bitwise_report": "results/directional_baseline_parity.json"
+  },
+  "search_run": {
+    "model_status": "Rejected after raw-moment positivity audit; not a submission candidate.",
+    "feasibility_definition": "Finite predictions, FLOP and wall checks only; initial evaluator did not inspect unclamped moment positivity.",
+    "report": "results/directional_search.json",
+    "wandb_id": "fu2soci3",
+    "command_wall_seconds": 3780.16,
+    "evaluated_configs": 88,
+    "feasible_configs": 88,
+    "sa_accepted": 16,
+    "sa_uphill_accepted": 9,
+    "ga_crossovers": 15,
+    "ga_mutated_genes": 27,
+    "hill_improvements": 3,
+    "workers": 8,
+    "threads_per_worker": 4
+  },
+  "initial_confirmation_run": {
+    "report": "results/directional_confirmation.json",
+    "wandb_id": "cb7fin5b",
+    "command_wall_seconds": 277.16
+  },
+  "initial_validation_run": {
+    "report": "results/directional_validation.json",
+    "wandb_id": "u4py4bdy",
+    "command_wall_seconds": 617.19
+  },
+  "positive_closure_repair": {
+    "source_sha256": "7f437f0b5b3e41b1341fcc1b1a5c5e858a6bfcdbbed4cd6f1d63bf276228ceb1",
+    "signed_variance_failure": "results/regen_variance_diagnosis_n128.json",
+    "cdf_tail_failure": "results/positive_wide_failure.json",
+    "audit_report": "results/regen_positive_n128.json",
+    "audit_checks_passed": 143,
+    "full_width_smoke": "results/directional_positive_initial_s26051511.json",
+    "parallel_residual_is_diagnostic_not_official_preflight": true
   }
 }
