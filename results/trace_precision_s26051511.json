@@ -1,0 +1,123 @@
+{
+  "seed": 26051511,
+  "precision": "float64",
+  "status": "completed",
+  "adoption": "rejected",
+  "reason": "Float64 avoids a non-finite exception but the closure diverges; a completed call is not a valid model.",
+  "error": null,
+  "flops_until_exit": 182325645848,
+  "C_over_B_until_exit": 0.08291210444804165,
+  "wall_seconds": 9.366436436001095,
+  "statistic_updates_recorded": 15,
+  "layer_states": [
+    {
+      "layer": 1,
+      "omega": 0.00995695815745445,
+      "min_variance": 0.5921016754235305,
+      "max_variance": 0.8063222435941017,
+      "v_norm": 0.06678655790197273
+    },
+    {
+      "layer": 2,
+      "omega": 0.0166653567608623,
+      "min_variance": 0.004607941177862718,
+      "max_variance": 1.4616188956521903,
+      "v_norm": 0.1018318291684974
+    },
+    {
+      "layer": 3,
+      "omega": 0.02070271606750579,
+      "min_variance": 0.00010459732785067918,
+      "max_variance": 1.1830329995448023,
+      "v_norm": 0.12273022860883592
+    },
+    {
+      "layer": 4,
+      "omega": 0.022516472312878566,
+      "min_variance": 5.1956179649297685e-05,
+      "max_variance": 0.9162516050793519,
+      "v_norm": 0.1609569596081328
+    },
+    {
+      "layer": 5,
+      "omega": 0.023733852442874074,
+      "min_variance": 7.030677928556864e-07,
+      "max_variance": 0.7990465398025322,
+      "v_norm": 0.29571726750507277
+    },
+    {
+      "layer": 6,
+      "omega": 0.02435835361958379,
+      "min_variance": 1.2646295044916888e-07,
+      "max_variance": 0.6739585165137978,
+      "v_norm": 0.5678033672602559
+    },
+    {
+      "layer": 7,
+      "omega": 0.023705775329066658,
+      "min_variance": 8.592654743416873e-08,
+      "max_variance": 0.5724312809241212,
+      "v_norm": 1.0724948283493299
+    },
+    {
+      "layer": 8,
+      "omega": 0.0023078833444704263,
+      "min_variance": 0.0,
+      "max_variance": 0.49383852084498514,
+      "v_norm": 1.946023046244945
+    },
+    {
+      "layer": 9,
+      "omega": -0.01566211514126893,
+      "min_variance": 0.0,
+      "max_variance": 0.5013940134851165,
+      "v_norm": 7.784810943272613
+    },
+    {
+      "layer": 10,
+      "omega": -0.0540429614722304,
+      "min_variance": 0.0,
+      "max_variance": 0.5189589511280144,
+      "v_norm": 20.97287615695647
+    },
+    {
+      "layer": 11,
+      "omega": -427.6935424528956,
+      "min_variance": 0.0,
+      "max_variance": 1.1401153377977626,
+      "v_norm": 6854558652.265602
+    },
+    {
+      "layer": 12,
+      "omega": -2.2269441353871425e+51,
+      "min_variance": 0.0,
+      "max_variance": 0.22380766130152807,
+      "v_norm": 2.6571955251596354e+19
+    },
+    {
+      "layer": 13,
+      "omega": -2.4131128941593748e+51,
+      "min_variance": 0.0,
+      "max_variance": 0.0,
+      "v_norm": 0.0
+    },
+    {
+      "layer": 14,
+      "omega": -2.6568494273125597e+51,
+      "min_variance": 0.0,
+      "max_variance": 0.0,
+      "v_norm": 0.0
+    },
+    {
+      "layer": 15,
+      "omega": -2.9433398455754656e+51,
+      "min_variance": 0.0,
+      "max_variance": 0.0,
+      "v_norm": 0.0
+    }
+  ],
+  "raw_mse": 9.27505996830828e+32,
+  "debiased_mse": 9.27505996830828e+32,
+  "reference_noise": 1.931565404975738e-09,
+  "adjusted": 9.275059968308279e+31
+}

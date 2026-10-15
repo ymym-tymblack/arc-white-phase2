@@ -1,0 +1,38 @@
+{
+  "protocol": "results/closure_protocol.json",
+  "network_roles_unchanged": true,
+  "inference_uses_monte_carlo": false,
+  "training_performed": false,
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "replicates_per_network": 2,
+  "measurement_runs": [
+    {"width": 64, "seed": 26051501, "samples_per_replicate": 2000000, "wandb_run_id": "qj8nnwdj", "wall_seconds": 13.04},
+    {"width": 64, "seed": 26051502, "samples_per_replicate": 2000000, "wandb_run_id": "3c9fcfjl", "wall_seconds": 13.38},
+    {"width": 128, "seed": 26051503, "samples_per_replicate": 4000000, "wandb_run_id": "31pyl8o7", "wall_seconds": 79.66},
+    {"width": 1024, "seed": 26051511, "observed_width": 64, "samples_per_replicate": 20000000, "wandb_run_id": "67mbtnsp", "wall_seconds": 242.47},
+    {"width": 1024, "seed": 26051512, "observed_width": 64, "samples_per_replicate": 20000000, "wandb_run_id": "hwhysvk8", "wall_seconds": 243.04}
+  ],
+  "sample_count_note": "Initial small-width default was 2 million; width128 used 4 million before its validation output was inspected. Width1024 used 20 million to resolve the smaller cumulants. NPZ/measurement manifests retain exact counts and RNG seeds.",
+  "reference_data_directory": "/kaggle/ext/closure",
+  "wandb_directory": "/kaggle/ext/wandb",
+  "decisions": {
+    "gamma_scale_mixture": "Not promoted: scalar scale does not reproduce the mixed-fourth intervention gain consistently.",
+    "matrix_core_fourth_closure": "Rejected: negative postactivation marginal variance on both diagnostic small networks.",
+    "third_trace_estimator": "Rejected: float32 non-finite failure; float64 completes at C/B=0.082912 but diverges to MSE=9.27506e32. Low FLOPs do not compensate for invalid closure dynamics."
+  },
+  "submission_estimator_changed": false,
+  "submission_archive_updated": false,
+  "final_seeds_not_evaluated": [26051591, 26051592, 26051593, 26051594],
+  "final_seed_policy": "No new candidate passed development acceptance, so final holdout measurements were intentionally not consumed.",
+  "verification": [
+    "GPU runtime smoke with 4099 samples and partial final chunks",
+    "Third/fourth tensor symmetry and repeated-index agreement",
+    "Full1024 forward / selected-coordinate mean correspondence",
+    "Gamma quadrature moments and omega=0 parity",
+    "Mean/covariance/third preservation in the linear ReLU regime",
+    "Heterogeneous-diagram parity and fourth-trace projection identity",
+    "Two independent-replicate, source/target-swapped intervention assessments at widths64 and128",
+    "Two full1024 network assessments with local prefix moments and measured current-estimator FLOPs",
+    "Python compileall for the seven new research modules"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "decision": "No research closure is promoted without finite end-to-end predictions and a measured adjusted-score improvement.",
+  "matrix_core": {
+    "implementation": "research/harmonic_closure.py",
+    "representation": "K_abcd = Sym6(G_ab D_cd), standardized fourth-trace projection after each ReLU",
+    "checks_passed": [
+      "retained nonlinear mean/covariance/third step matches independent joint_step implementation",
+      "heterogeneous third/fourth diagrams and coincident-index slices agree",
+      "projected standardized fourth trace is preserved"
+    ],
+    "runs": [
+      {
+        "network": "/kaggle/ext/closure/network_n64_s26051501.npz",
+        "status": "rejected",
+        "exception": "FloatingPointError: postactivation marginal variance is not positive",
+        "minimum_variance": -0.0013435421881634528
+      },
+      {
+        "network": "/kaggle/ext/closure/network_n64_s26051502.npz",
+        "status": "rejected",
+        "exception": "FloatingPointError: postactivation marginal variance is not positive",
+        "minimum_variance": -0.008254497728232875
+      }
+    ],
+    "interpretation": "The retained-moment projection does not guarantee a realizable distribution. Negative variances were not hidden by eigenvalue repair or variance clipping. Not a proof that all matrix-core fourth-order closures fail."
+  },
+  "third_trace_float32": {
+    "implementation": "research/trace_estimator.py",
+    "network": "/kaggle/ext/closure/network_n1024_s26051511.npz",
+    "kwargs": {"precision": "float32", "metric": "elliptical"},
+    "status": "failed",
+    "exception": "flopscope.errors.SymmetryError: max deviation = nan",
+    "preceding_warnings": ["overflow encountered in multiply", "invalid value encountered in multiply"],
+    "score": null,
+    "interpretation": "A non-finite prediction is not an accepted low-FLOP solution. Float64 diagnosis is recorded separately."
+  }
+}
