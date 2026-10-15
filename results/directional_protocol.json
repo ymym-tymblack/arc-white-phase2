@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "goal": "Stable low-cost directional fourth-cumulant regeneration; optimize measured adjusted score with offline heuristics, no inference sampling.",
+  "baseline_commit": "b7c1a86",
+  "baseline_kwargs": {
+    "directional_k4": false,
+    "kmax": 3,
+    "window": 16,
+    "iik_rank": 16,
+    "use_k4": true,
+    "omega_scale": 1.0,
+    "tau_scale": 1.0,
+    "calib": 0.0,
+    "age_old": 6,
+    "rank_old": 256,
+    "rebuild_old": false,
+    "beta_k4": 0.0,
+    "k4_birth_rad": false,
+    "k3leg": true,
+    "k3leg_rank": 16
+  },
+  "search_fast_mini": [0, 1, 2, 3],
+  "search_execution_mini": [0, 1, 2, 3, 4, 5, 6, 7],
+  "search_execution_note": "Use eight rather than four development MLPs per trial to keep eight workers x four threads occupied. The allowed development pool and untouched final protocol are unchanged; no final predictions inspected.",
+  "search_confirmation_mini": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  "validation_mini": [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+  "mini_note": "All mini data has been inspected in previous work. Only fresh final networks are untouched tests. Validation may choose among a few development finalists, never final seeds.",
+  "final_seeds": [26051591, 26051592, 26051593, 26051594],
+  "final_shape": [16, 1024, 1024],
+  "final_reference_samples_per_replicate": 40000000,
+  "final_reference_replicates": 2,
+  "final_reference_use": "Generate reference statistics independently while developing; freeze one candidate before evaluating predictions on final networks. No final-data tuning or repeat selection.",
+  "search_methods": ["simulated_annealing", "genetic_algorithm", "hill_climbing"],
+  "runtime": "8 processes x 4 BLAS threads for offline candidate evaluation; single-thread official subprocess safety verification; RTX5090 for reference Monte Carlo only.",
+  "acceptance": "Finite predictions, budget/wall/residual/memory safety, validation gain, then paired improvement on untouched final networks; otherwise retain baseline.",
+  "final_acceptance": {
+    "minimum_relative_gain": 0.05,
+    "minimum_improved_networks": 3,
+    "positive_improvement_in_both_reference_series": true
+  }
+}

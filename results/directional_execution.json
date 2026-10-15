@@ -1,0 +1,26 @@
+{
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "reference_generator": "research/gpu_joint4.py",
+  "reference_launcher": "research/gpu_env.sh",
+  "reference_arguments": {"samples": 40000000, "replicates": 2, "chunk": 32768, "observe": 8, "k_block": 8},
+  "reference_sampling_role": "Offline independent evaluation reference only; no input sampling in Estimator.predict.",
+  "reference_replicates_per_network": 2,
+  "samples_per_replicate": 40000000,
+  "passes_per_replicate": 2,
+  "second_pass": "Replay the same input sample stream for centered moments; not an independent reference replicate.",
+  "unique_reference_input_samples_total": 320000000,
+  "final_predictions_inspected": false,
+  "reference_runs": [
+    {"network_seed": 26051591, "manifest": "/kaggle/ext/closure/final_n1024_s26051591.json", "wandb_id": "gme7e6oo", "wall_seconds": 405.37},
+    {"network_seed": 26051592, "manifest": "/kaggle/ext/closure/final_n1024_s26051592.json", "wandb_id": "kztj58c6", "wall_seconds": 405.40},
+    {"network_seed": 26051593, "manifest": "/kaggle/ext/closure/final_n1024_s26051593.json", "wandb_id": "q121arch", "wall_seconds": 411.76},
+    {"network_seed": 26051594, "manifest": "/kaggle/ext/closure/final_n1024_s26051594.json", "wandb_id": "qfep210y", "wall_seconds": 412.42}
+  ],
+  "audit": {
+    "static_checks_passed": 26,
+    "real_width128_checks_passed": 65,
+    "real_width128_report": "results/regen_audit_n128.json",
+    "full_rank_shared_basis_report": "results/regen_shared_equivalence.json",
+    "disabled_baseline_bitwise_report": "results/directional_baseline_parity.json"
+  }
+}

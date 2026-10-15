@@ -184,6 +184,14 @@ g=6H/(n+4)-3ΣH/((n+2)(n+4)) とする。
 最終用4seedには選択済み候補を一度だけ当て、参照MCは予め独立にGPUで生成する。
 プロトコルは `results/directional_protocol.json`、探索空間は `results/directional_search_space.json`。
 
+```bash
+env OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4 WANDB_DIR=/kaggle/ext/wandb \
+  uv run --with wandb python research/search_directional_k4.py \
+  --methods sa ga hill --sa-steps 24 --generations 3 --population 6 --hill-steps 3 \
+  --indices 0 1 2 3 4 5 6 7 --seed 20261015 \
+  --output results/directional_search.json --wandb-offline
+```
+
 
 
 
