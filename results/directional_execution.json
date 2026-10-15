@@ -57,5 +57,35 @@
     "audit_checks_passed": 143,
     "full_width_smoke": "results/directional_positive_initial_s26051511.json",
     "parallel_residual_is_diagnostic_not_official_preflight": true
+  },
+  "positive_warm_start": {
+    "report": "results/directional_positive_search.json",
+    "wandb_id": "funce5w3",
+    "command_wall_seconds": 179.93,
+    "evaluated_configs": 4
+  },
+  "positive_search_run": {
+    "report": "results/directional_positive_search.json",
+    "wandb_id": "xqt58zri",
+    "command_wall_seconds": 3858.34,
+    "evaluated_configs_including_warm_start": 94,
+    "feasible_configs": 94,
+    "sa_accepted": 18,
+    "sa_uphill_accepted": 8,
+    "ga_crossovers": 15,
+    "ga_mutated_genes": 26,
+    "hill_improvements": 2,
+    "workers": 8,
+    "threads_per_worker": 4
+  },
+  "positive_confirmation_run": {
+    "report": "results/directional_positive_confirmation.json",
+    "wandb_id": "xc3n9r5x",
+    "command_wall_seconds": 533.64,
+    "evaluated_configs": 8,
+    "development_mlp_count": 12,
+    "same_resources_adjusted_gain": 0.20318199732772435,
+    "same_resources_extra_flops": 0.006117411751263013,
+    "note": "Development ablations, not independent final tests. Effects of removing different paths are not additive."
   }
 }

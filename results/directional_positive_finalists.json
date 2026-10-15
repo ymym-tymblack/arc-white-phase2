@@ -1,0 +1,14 @@
+{
+  "selection": "After94 positive-model evaluations, before the next confirmation or untouched-final predictions. Compare overall best, best rank16, best age8; ablations test resource-matched legacy, fourth-to-third feed, covariance-direction regeneration, and K31 cuts. Validation may choose the best three directional development configurations; no final-data tuning.",
+  "labels": ["baseline", "fast8_best", "rank16_best", "age8_best", "resource_matched_legacy", "no_fourth_to_third_feed", "no_offdiagonal_regeneration", "no_K31"],
+  "configs": [
+    {"directional_k4": false, "age_old": 6, "rank_old": 256, "k3leg_rank": 16},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 2.0, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 8},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 1.6, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 16},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 1.6, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 8, "rank_old": 256, "k3leg_rank": 8},
+    {"directional_k4": false, "calib": 0.0, "regen_p0": 2.0, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 8},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 2.0, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.0, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 8},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 0.0, "regen_p1": 0.0, "regen_p2": 0.0, "regen_p3": 0.0, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 8},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 2.0, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 0.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 8}
+  ]
+}

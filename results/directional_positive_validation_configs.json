@@ -1,0 +1,11 @@
+{
+  "selection": "Three lowest adjusted scores among feasible directional configurations on mini0..11; plus original baseline and resource-matched legacy control. No untouched-final predictions inspected.",
+  "labels": ["baseline", "fast8_best", "rank16_best", "age8_best", "resource_matched_legacy"],
+  "configs": [
+    {"directional_k4": false, "age_old": 6, "rank_old": 256, "k3leg_rank": 16},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 2.0, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 8},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 1.6, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 16},
+    {"directional_k4": true, "calib": 0.0, "regen_p0": 1.6, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 8, "rank_old": 256, "k3leg_rank": 8},
+    {"directional_k4": false, "calib": 0.0, "regen_p0": 2.0, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 8}
+  ]
+}
