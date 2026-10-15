@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "networks": [
+    {
+      "width": 64,
+      "depth": 8,
+      "seed": 26051501,
+      "role": "diagnostic",
+      "path": "/kaggle/ext/closure/network_n64_s26051501.npz"
+    },
+    {
+      "width": 64,
+      "depth": 8,
+      "seed": 26051502,
+      "role": "diagnostic",
+      "path": "/kaggle/ext/closure/network_n64_s26051502.npz"
+    },
+    {
+      "width": 128,
+      "depth": 8,
+      "seed": 26051503,
+      "role": "validation",
+      "path": "/kaggle/ext/closure/network_n128_s26051503.npz"
+    },
+    {
+      "width": 1024,
+      "depth": 16,
+      "seed": 26051511,
+      "role": "diagnostic",
+      "path": "/kaggle/ext/closure/network_n1024_s26051511.npz"
+    },
+    {
+      "width": 1024,
+      "depth": 16,
+      "seed": 26051512,
+      "role": "diagnostic",
+      "path": "/kaggle/ext/closure/network_n1024_s26051512.npz"
+    },
+    {
+      "width": 1024,
+      "depth": 16,
+      "seed": 26051591,
+      "role": "final_untouched",
+      "path": "/kaggle/ext/closure/network_n1024_s26051591.npz"
+    },
+    {
+      "width": 1024,
+      "depth": 16,
+      "seed": 26051592,
+      "role": "final_untouched",
+      "path": "/kaggle/ext/closure/network_n1024_s26051592.npz"
+    },
+    {
+      "width": 1024,
+      "depth": 16,
+      "seed": 26051593,
+      "role": "final_untouched",
+      "path": "/kaggle/ext/closure/network_n1024_s26051593.npz"
+    },
+    {
+      "width": 1024,
+      "depth": 16,
+      "seed": 26051594,
+      "role": "final_untouched",
+      "path": "/kaggle/ext/closure/network_n1024_s26051594.npz"
+    }
+  ],
+  "baseline": "candidates/k3_factored.py at 4d56125",
+  "inference_sampling": false,
+  "fitting_final_seeds": false,
+  "small_width_samples_per_replicate": 2000000,
+  "independent_replicates": 2,
+  "precision": "float32 GEMM, float64 accumulation, TF32 disabled",
+  "decision": "Reject if cross-fitted mean error does not improve beyond independent-replicate noise; measure FLOPs before adoption.",
+  "note": "Previous mini indices 0..99 are development data, not an untouched test set."
+}
