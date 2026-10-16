@@ -360,7 +360,16 @@ def audit_positive_quadrature(audit, args, module):
         ("negative_omega", 1.3, .6, .4, -.8),
         ("negative_both_scaled", -.9, 2.1, -.65, -.3),
         ("symmetric_negative_omega", 0.0, 1.0, 0.0, -1.0),
+        ("symmetric_positive_omega_tail", -3.4, .9, 0.0, .65),
     ]
+    # Partition rather than replay fixtures: every helper mode is checked
+    # directly against literal-density quadrature, never against another call.
+    helper_modes = {
+        "gaussian": "gaussian",
+        "gaussian_far_tail": "gaussian",
+        "symmetric_negative_omega": "zero_skew",
+        "symmetric_positive_omega_tail": "zero_skew",
+    }
     expected, diagnostics = [], []
     for name, m, sigma, tau, omega in cases:
         a = (tau / 6 - tau * omega / 4,
@@ -409,21 +418,31 @@ def audit_positive_quadrature(audit, args, module):
         audit.compare(f"positive quadrature {name} preactivation variance",
                       integral(lambda q: (effective_mean + effective_sigma*q - m)**2) / z,
                       sigma**2)
-        diagnostics.append(dict(case=name, normalization=z, mean_q=mean_q,
+        diagnostics.append(dict(case=name, helper_mode=helper_modes.get(name, "full"),
+                                normalization=z, mean_q=mean_q,
                                 variance_q=variance_q, raw_powers=moments))
 
-    m, sigma, tau, omega = (np.array([case[i] for case in cases], dtype=np.float64)
-                             for i in range(1, 5))
-    with flops.BudgetContext(flop_budget=args.budget, wall_time_limit_s=args.wall, quiet=True):
-        vectors = [fnp.asarray(value, dtype=fnp.float64)
-                   for value in (m, sigma**2, sigma, tau, omega)]
-        powers = module._positive_relu_powers(*vectors, through=4)
-        actual = np.stack([np.asarray(power) for power in powers], axis=1)
-    for index, (name, *_rest) in enumerate(cases):
-        tiny = max(expected[index]) < 1e-10
-        audit.compare(f"positive marginal {name} raw powers1..4",
-                      actual[index], expected[index], atol=0.0 if tiny else 2e-9,
-                      rtol=5e-7 if tiny else 2e-9)
+    for mode in ("full", "zero_skew", "gaussian"):
+        indices = [i for i, case in enumerate(cases)
+                   if helper_modes.get(case[0], "full") == mode]
+        m, sigma, tau, omega = (
+            np.array([cases[index][i] for index in indices], dtype=np.float64)
+            for i in range(1, 5))
+        with flops.BudgetContext(flop_budget=args.budget, wall_time_limit_s=args.wall, quiet=True):
+            vectors = [fnp.asarray(value, dtype=fnp.float64)
+                       for value in (m, sigma**2, sigma, tau, omega)]
+            if mode != "full":
+                vectors[3] = None
+            if mode == "gaussian":
+                vectors[4] = None
+            powers = module._positive_relu_powers(*vectors, through=4)
+            actual = np.stack([np.asarray(power) for power in powers], axis=1)
+        for row, index in enumerate(indices):
+            name = cases[index][0]
+            tiny = max(expected[index]) < 1e-10
+            audit.compare(f"positive marginal {name} ({mode}) raw powers1..4",
+                          actual[row], expected[index], atol=0.0 if tiny else 2e-9,
+                          rtol=5e-7 if tiny else 2e-9)
     return diagnostics
 
 

@@ -1,0 +1,1211 @@
+{
+  "ok": true,
+  "seed": 504211,
+  "checks": [
+    {
+      "name": "Sym6 diagonal",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "Sym6 K22 offdiagonal",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "Sym6 K31 offdiagonal",
+      "max_abs": 2.220446049250313e-16,
+      "relative_to_max": 1.7579334157595573e-16,
+      "ok": true
+    },
+    {
+      "name": "Sym6 K211 distinct",
+      "max_abs": 5.551115123125783e-17,
+      "relative_to_max": 7.652794079262472e-17,
+      "ok": true
+    },
+    {
+      "name": "K31 standardization",
+      "max_abs": 3.469446951953614e-18,
+      "relative_to_max": 6.939810719707581e-17,
+      "ok": true
+    },
+    {
+      "name": "detect missing Sym6 /6",
+      "max_abs": 19.15391567463039,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "detect K31 missing /2",
+      "max_abs": 1.2631002001238576,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "raw postactivation K22",
+      "max_abs": 1.7763568394002505e-14,
+      "relative_to_max": 8.149510998757853e-16,
+      "ok": true
+    },
+    {
+      "name": "raw postactivation K4",
+      "max_abs": 1.0658141036401503e-14,
+      "relative_to_max": 4.889706599254712e-16,
+      "ok": true
+    },
+    {
+      "name": "raw core diagonal vs dense Frobenius projection",
+      "max_abs": 8.881784197001252e-15,
+      "relative_to_max": 6.648331157602035e-16,
+      "ok": true
+    },
+    {
+      "name": "detect forbidden postvariance division",
+      "max_abs": 4590.144868261591,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "birth distinct plus repeated correction",
+      "max_abs": 3.2526065174565133e-19,
+      "relative_to_max": 7.228806041224678e-17,
+      "ok": true
+    },
+    {
+      "name": "birth Uiii zero",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "birth Uiik counted once",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "young folded D3 vs transported dense tensor",
+      "max_abs": 1.3010426069826053e-18,
+      "relative_to_max": 4.161513384087414e-16,
+      "ok": true
+    },
+    {
+      "name": "young folded D21 vs transported dense tensor",
+      "max_abs": 8.673617379884035e-19,
+      "relative_to_max": 2.774342256058276e-16,
+      "ok": true
+    },
+    {
+      "name": "young D21 diagonal equals D3",
+      "max_abs": 8.673617379884035e-19,
+      "relative_to_max": 2.7743422560582775e-16,
+      "ok": true
+    },
+    {
+      "name": "young detect missing metric/var in u",
+      "max_abs": 0.027904414207216052,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "young detect feed factor2",
+      "max_abs": 0.003126368911746064,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "shared folded D3 vs transported dense tensor",
+      "max_abs": 1.734723475976807e-18,
+      "relative_to_max": 1.0760293564335521e-15,
+      "ok": true
+    },
+    {
+      "name": "shared folded D21 vs transported dense tensor",
+      "max_abs": 1.5178830414797062e-18,
+      "relative_to_max": 9.41525686879358e-16,
+      "ok": true
+    },
+    {
+      "name": "shared D21 diagonal equals D3",
+      "max_abs": 2.168404344971009e-19,
+      "relative_to_max": 1.3450366955419416e-16,
+      "ok": true
+    },
+    {
+      "name": "shared detect missing metric/var in u",
+      "max_abs": 0.008738257552171608,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "shared detect feed factor2",
+      "max_abs": 0.0016121525547652918,
+      "ok": true,
+      "interpretation": "wrong normalization must disagree"
+    },
+    {
+      "name": "exact diagonal core transport",
+      "max_abs": 5.551115123125783e-17,
+      "relative_to_max": 4.6608206299442273e-17,
+      "ok": true
+    },
+    {
+      "name": "regenerated lambda fixed point",
+      "max_abs": 6.938893903907228e-18,
+      "relative_to_max": 1.5276319143281875e-16,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H0 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H1 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H2 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H3 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H4 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H5 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H6 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H7 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H8 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H9 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H10 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H11 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive standardized H12 exact order2",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature gaussian preactivation mean",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature gaussian preactivation variance",
+      "max_abs": 8.881784197001252e-16,
+      "relative_to_max": 3.0732817290661775e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature gaussian_tail preactivation mean",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature gaussian_tail preactivation variance",
+      "max_abs": 1.1102230246251565e-16,
+      "relative_to_max": 1.7347234759768068e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature observed_layer4_neuron32 preactivation mean",
+      "max_abs": 6.661338147750939e-16,
+      "relative_to_max": 3.5246042659494554e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature observed_layer4_neuron32 preactivation variance",
+      "max_abs": 2.220446049250313e-16,
+      "relative_to_max": 2.220446049250313e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature observed_layer5_neuron111 preactivation mean",
+      "max_abs": 4.440892098500626e-16,
+      "relative_to_max": 2.1997466434116142e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature observed_layer5_neuron111 preactivation variance",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature observed_width1024_tail preactivation mean",
+      "max_abs": 8.881784197001252e-16,
+      "relative_to_max": 1.7408754385785292e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature observed_width1024_tail preactivation variance",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature gaussian_far_tail preactivation mean",
+      "max_abs": 1.7763568394002505e-15,
+      "relative_to_max": 1.4802973661668753e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature gaussian_far_tail preactivation variance",
+      "max_abs": 4.440892098500626e-16,
+      "relative_to_max": 4.440892098500626e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature positive_tau preactivation mean",
+      "max_abs": 5.551115123125783e-17,
+      "relative_to_max": 1.5860328923216522e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature positive_tau preactivation variance",
+      "max_abs": 8.881784197001252e-16,
+      "relative_to_max": 5.255493607693048e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature negative_tau preactivation mean",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature negative_tau preactivation variance",
+      "max_abs": 8.881784197001252e-16,
+      "relative_to_max": 5.255493607693048e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature negative_omega preactivation mean",
+      "max_abs": 2.220446049250313e-16,
+      "relative_to_max": 1.7080354225002407e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature negative_omega preactivation variance",
+      "max_abs": 1.1102230246251565e-16,
+      "relative_to_max": 3.0839528461809903e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature negative_both_scaled preactivation mean",
+      "max_abs": 1.1102230246251565e-16,
+      "relative_to_max": 1.2335811384723962e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature negative_both_scaled preactivation variance",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature symmetric_negative_omega preactivation mean",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature symmetric_negative_omega preactivation variance",
+      "max_abs": 2.220446049250313e-16,
+      "relative_to_max": 2.220446049250313e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature symmetric_positive_omega_tail preactivation mean",
+      "max_abs": 4.440892098500626e-16,
+      "relative_to_max": 1.3061447348531254e-16,
+      "ok": true
+    },
+    {
+      "name": "positive quadrature symmetric_positive_omega_tail preactivation variance",
+      "max_abs": 1.1102230246251565e-16,
+      "relative_to_max": 1.3706457094137734e-16,
+      "ok": true
+    },
+    {
+      "name": "positive marginal gaussian_tail (full) raw powers1..4",
+      "max_abs": 7.497800123823506e-16,
+      "relative_to_max": 4.676451418787761e-13,
+      "ok": true
+    },
+    {
+      "name": "positive marginal observed_layer4_neuron32 (full) raw powers1..4",
+      "max_abs": 1.536964999715451e-15,
+      "relative_to_max": 1.7150065747502566e-13,
+      "ok": true
+    },
+    {
+      "name": "positive marginal observed_layer5_neuron111 (full) raw powers1..4",
+      "max_abs": 4.475586568020162e-16,
+      "relative_to_max": 3.9534973116900184e-14,
+      "ok": true
+    },
+    {
+      "name": "positive marginal observed_width1024_tail (full) raw powers1..4",
+      "max_abs": 2.014101424653714e-32,
+      "relative_to_max": 5.74995892916582e-15,
+      "ok": true
+    },
+    {
+      "name": "positive marginal positive_tau (full) raw powers1..4",
+      "max_abs": 1.7763568394002505e-15,
+      "relative_to_max": 2.5482916587680647e-16,
+      "ok": true
+    },
+    {
+      "name": "positive marginal negative_tau (full) raw powers1..4",
+      "max_abs": 8.881784197001252e-16,
+      "relative_to_max": 9.483479724014572e-16,
+      "ok": true
+    },
+    {
+      "name": "positive marginal negative_omega (full) raw powers1..4",
+      "max_abs": 8.881784197001252e-16,
+      "relative_to_max": 1.4237584898773545e-16,
+      "ok": true
+    },
+    {
+      "name": "positive marginal negative_both_scaled (full) raw powers1..4",
+      "max_abs": 1.7763568394002505e-14,
+      "relative_to_max": 7.416423673033854e-16,
+      "ok": true
+    },
+    {
+      "name": "positive marginal symmetric_negative_omega (zero_skew) raw powers1..4",
+      "max_abs": 4.440892098500626e-16,
+      "relative_to_max": 2.1954209672983984e-16,
+      "ok": true
+    },
+    {
+      "name": "positive marginal symmetric_positive_omega_tail (zero_skew) raw powers1..4",
+      "max_abs": 6.505213034913027e-19,
+      "relative_to_max": 5.021441372964503e-16,
+      "ok": true
+    },
+    {
+      "name": "positive marginal gaussian (gaussian) raw powers1..4",
+      "max_abs": 1.4210854715202004e-14,
+      "relative_to_max": 5.526983857326665e-16,
+      "ok": true
+    },
+    {
+      "name": "positive marginal gaussian_far_tail (gaussian) raw powers1..4",
+      "max_abs": 6.012124957175515e-45,
+      "relative_to_max": 6.0121249571755145e-15,
+      "ok": true
+    },
+    {
+      "name": "network layer0 lambda",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 transported diagonal",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 metric",
+      "max_abs": 8.231119070778448e-07,
+      "relative_to_max": 3.039052648442257e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer0 standardized omega",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 negative unclamped prevariances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 raw variance identity",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 negative unclamped model variances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer0 postvariance matches raw model",
+      "max_abs": 2.9660259137642697e-08,
+      "relative_to_max": 3.212901133700098e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer0 raw core projection",
+      "max_abs": 1.1195518512252534e-08,
+      "relative_to_max": 6.73891873929881e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer1 lambda",
+      "max_abs": 3.5012190646721564e-09,
+      "relative_to_max": 4.1295887973471555e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer1 transported diagonal",
+      "max_abs": 3.185428695817727e-08,
+      "relative_to_max": 2.492236017913411e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer1 metric",
+      "max_abs": 8.35090021578111e-07,
+      "relative_to_max": 3.160318799865959e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer1 standardized omega",
+      "max_abs": 6.803897867335706e-08,
+      "relative_to_max": 4.799419873836748e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer1 negative unclamped prevariances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer1 raw variance identity",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer1 negative unclamped model variances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer1 postvariance matches raw model",
+      "max_abs": 5.918713830155298e-08,
+      "relative_to_max": 4.355807553589053e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer1 raw core projection",
+      "max_abs": 1.4465501560478877e-08,
+      "relative_to_max": 1.1391294486977895e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer2 lambda",
+      "max_abs": 7.590688827496805e-09,
+      "relative_to_max": 8.901530579163153e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer2 transported diagonal",
+      "max_abs": 2.5399715997131977e-08,
+      "relative_to_max": 2.2949137783171943e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer2 metric",
+      "max_abs": 9.461377192820919e-07,
+      "relative_to_max": 3.412776737629201e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer2 standardized omega",
+      "max_abs": 6.787077891368121e-08,
+      "relative_to_max": 3.155438724758399e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer2 negative unclamped prevariances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer2 raw variance identity",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer2 negative unclamped model variances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer2 postvariance matches raw model",
+      "max_abs": 5.028571625764755e-08,
+      "relative_to_max": 3.442007069866903e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer2 raw core projection",
+      "max_abs": 1.525558367132529e-08,
+      "relative_to_max": 1.1417751340811868e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer3 lambda",
+      "max_abs": 5.049035828319504e-09,
+      "relative_to_max": 5.6028612265222216e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer3 transported diagonal",
+      "max_abs": 2.2725383894139917e-08,
+      "relative_to_max": 1.7383054777019199e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer3 metric",
+      "max_abs": 9.314933815396387e-07,
+      "relative_to_max": 3.3441800561839156e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer3 standardized omega",
+      "max_abs": 1.041531513812366e-07,
+      "relative_to_max": 4.229550270839817e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer3 negative unclamped prevariances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer3 raw variance identity",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer3 negative unclamped model variances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer3 postvariance matches raw model",
+      "max_abs": 5.302637529069898e-08,
+      "relative_to_max": 3.499696728047304e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer3 raw core projection",
+      "max_abs": 1.744736694009319e-08,
+      "relative_to_max": 9.82576377977094e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer4 lambda",
+      "max_abs": 2.4697641987092567e-09,
+      "relative_to_max": 2.4755840904489973e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer4 transported diagonal",
+      "max_abs": 2.4872174930745672e-08,
+      "relative_to_max": 1.5526826321403073e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer4 metric",
+      "max_abs": 9.97773929700685e-07,
+      "relative_to_max": 3.5283373576071575e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer4 standardized omega",
+      "max_abs": 2.333735033555051e-07,
+      "relative_to_max": 6.60541223009566e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer4 negative unclamped prevariances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer4 raw variance identity",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer4 negative unclamped model variances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer4 postvariance matches raw model",
+      "max_abs": 3.5838938927668096e-08,
+      "relative_to_max": 3.009798523277242e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer4 raw core projection",
+      "max_abs": 9.72802838283826e-09,
+      "relative_to_max": 8.43484231733724e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer5 lambda",
+      "max_abs": 1.151649302311153e-08,
+      "relative_to_max": 1.336963573844774e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer5 transported diagonal",
+      "max_abs": 1.5719842941241957e-08,
+      "relative_to_max": 1.5012944205670642e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer5 metric",
+      "max_abs": 1.1009101097414487e-06,
+      "relative_to_max": 4.171661260807317e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer5 standardized omega",
+      "max_abs": 1.7749660541355183e-07,
+      "relative_to_max": 4.3859170853469205e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer5 negative unclamped prevariances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer5 raw variance identity",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer5 negative unclamped model variances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer5 postvariance matches raw model",
+      "max_abs": 3.057773767523031e-08,
+      "relative_to_max": 2.4422119006273523e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer5 raw core projection",
+      "max_abs": 1.3186344391402649e-08,
+      "relative_to_max": 1.1389489911304375e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer6 lambda",
+      "max_abs": 9.133403158778641e-09,
+      "relative_to_max": 8.935845217732171e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer6 transported diagonal",
+      "max_abs": 2.133924220659722e-08,
+      "relative_to_max": 1.8331409432569242e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer6 metric",
+      "max_abs": 1.0913759806996381e-06,
+      "relative_to_max": 3.7512880638397545e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer6 standardized omega",
+      "max_abs": 2.58986021683949e-07,
+      "relative_to_max": 5.938828070032517e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer6 negative unclamped prevariances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer6 raw variance identity",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer6 negative unclamped model variances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer6 postvariance matches raw model",
+      "max_abs": 3.458788278010161e-08,
+      "relative_to_max": 2.7077213087184926e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer6 raw core projection",
+      "max_abs": 1.1918439707381268e-08,
+      "relative_to_max": 7.070764310041997e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer7 lambda",
+      "max_abs": 7.51764445139358e-09,
+      "relative_to_max": 5.967723575805095e-08,
+      "ok": true
+    },
+    {
+      "name": "network layer7 transported diagonal",
+      "max_abs": 2.2695081092205527e-08,
+      "relative_to_max": 1.4194105149493603e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer7 metric",
+      "max_abs": 1.0367130625077436e-06,
+      "relative_to_max": 3.567135498340047e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer7 standardized omega",
+      "max_abs": 3.897555316267898e-07,
+      "relative_to_max": 9.769632061155252e-07,
+      "ok": true
+    },
+    {
+      "name": "network layer7 negative unclamped prevariances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer7 raw variance identity",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer7 negative unclamped model variances",
+      "max_abs": 0.0,
+      "relative_to_max": 0.0,
+      "ok": true
+    },
+    {
+      "name": "network layer7 postvariance matches raw model",
+      "max_abs": 5.1898496167268604e-08,
+      "relative_to_max": 4.850341332333505e-08,
+      "ok": true
+    }
+  ],
+  "positive_quadrature": [
+    {
+      "case": "gaussian",
+      "helper_mode": "gaussian",
+      "normalization": 1.0000000000000002,
+      "mean_q": 0.0,
+      "variance_q": 0.9999999999999998,
+      "raw_powers": [
+        1.0200097386358626,
+        2.45563432231953,
+        7.369036882707006,
+        25.711771704134527
+      ]
+    },
+    {
+      "case": "gaussian_tail",
+      "helper_mode": "full",
+      "normalization": 1.0000000000000002,
+      "mean_q": 0.0,
+      "variance_q": 0.9999999999999998,
+      "raw_powers": [
+        0.0016033097433025615,
+        0.0007675663218916087,
+        0.0005171038276440624,
+        0.00043951968274376433
+      ]
+    },
+    {
+      "case": "observed_layer4_neuron32",
+      "helper_mode": "full",
+      "normalization": 1.0217285043883526,
+      "mean_q": 0.0005621656517822809,
+      "variance_q": 1.1152670134228941,
+      "raw_powers": [
+        0.005881150883604483,
+        0.004834153939817735,
+        0.005914406912822599,
+        0.008961860685223715
+      ]
+    },
+    {
+      "case": "observed_layer5_neuron111",
+      "helper_mode": "full",
+      "normalization": 1.018469330045565,
+      "mean_q": 0.013273752753540985,
+      "variance_q": 1.0918776053132206,
+      "raw_powers": [
+        0.005187593100879321,
+        0.005051621198844129,
+        0.006923757456430467,
+        0.011320575721112516
+      ]
+    },
+    {
+      "case": "observed_width1024_tail",
+      "helper_mode": "full",
+      "normalization": 1.0026595394010853,
+      "mean_q": 0.0018004553084172527,
+      "variance_q": 1.0143205670560584,
+      "raw_powers": [
+        3.502810106064377e-18,
+        4.616168713614491e-19,
+        9.001056436827647e-20,
+        2.3095693418332008e-20
+      ]
+    },
+    {
+      "case": "gaussian_far_tail",
+      "helper_mode": "gaussian",
+      "normalization": 1.0000000000000002,
+      "mean_q": 0.0,
+      "variance_q": 0.9999999999999998,
+      "raw_powers": [
+        1.4605201169845762e-34,
+        2.3857971696213624e-35,
+        5.808363042351909e-36,
+        1.8735585804180003e-36
+      ]
+    },
+    {
+      "case": "positive_tau",
+      "helper_mode": "full",
+      "normalization": 1.0767298611111111,
+      "mean_q": 0.11983816739342572,
+      "variance_q": 1.570635437285971,
+      "raw_powers": [
+        0.37139936736614004,
+        0.72756065824662,
+        2.0311982313084,
+        6.970775237945114
+      ]
+    },
+    {
+      "case": "negative_tau",
+      "helper_mode": "full",
+      "normalization": 1.0767298611111111,
+      "mean_q": -0.11983816739342572,
+      "variance_q": 1.570635437285971,
+      "raw_powers": [
+        0.3291341779007439,
+        0.36641856629242636,
+        0.5277306156201459,
+        0.9365532964140079
+      ]
+    },
+    {
+      "case": "negative_omega",
+      "helper_mode": "full",
+      "normalization": 1.240177777777778,
+      "mean_q": -0.6433486238532112,
+      "variance_q": 3.051985575709116,
+      "raw_powers": [
+        1.3035896463671919,
+        2.049181964348768,
+        3.4732811036777766,
+        6.238266012212751
+      ]
+    },
+    {
+      "case": "negative_both_scaled",
+      "helper_mode": "full",
+      "normalization": 1.1508173177083334,
+      "mean_q": 0.36529472882553926,
+      "variance_q": 2.1374662963819033,
+      "raw_powers": [
+        0.4523655981295462,
+        1.4143692291936143,
+        5.562358348741861,
+        23.951663466302378
+      ]
+    },
+    {
+      "case": "symmetric_negative_omega",
+      "helper_mode": "zero_skew",
+      "normalization": 1.199652777777778,
+      "mean_q": 0.0,
+      "variance_q": 3.431259044862518,
+      "raw_powers": [
+        0.3631430912059936,
+        0.5000000000000001,
+        0.9361650672897462,
+        2.022797524779687
+      ]
+    },
+    {
+      "case": "symmetric_positive_omega_tail",
+      "helper_mode": "zero_skew",
+      "normalization": 1.0124017686631945,
+      "mean_q": 0.0,
+      "variance_q": 1.1441508165867473,
+      "raw_powers": [
+        0.0012954872021282908,
+        0.0010359164764748628,
+        0.0010334951374311274,
+        0.001207594647459858
+      ]
+    }
+  ],
+  "runtime": {
+    "network": "/kaggle/ext/closure/network_n128_s26051503.npz",
+    "candidate": "/kaggle/arc-white-phase2/candidates/k3_factored.py",
+    "kwargs": {
+      "directional_k4": true,
+      "collect": true
+    },
+    "flops": 631660419,
+    "residual_wall_time_s": 0.0822351690439973,
+    "recurrence_layers": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "projection_layers": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "variance_layers": [
+      {
+        "layer": 0,
+        "minimum_raw_variance": 0.44585175392546217,
+        "negative_variances": 0,
+        "minimum_raw_pre_variance": 1.3080774545669556,
+        "prevariance_roundoff_allowance": 2.066382330667693e-05,
+        "negative_prevariances": 0,
+        "minimum_pearson_slack": 2.0,
+        "negative_entries": [],
+        "signed_edgeworth_diagnosis": {
+          "minimum_raw_variance": 0.44585174209500333,
+          "negative_variances": 0,
+          "negative_entries": []
+        }
+      },
+      {
+        "layer": 1,
+        "minimum_raw_variance": 0.014470539293279336,
+        "negative_variances": 0,
+        "minimum_raw_pre_variance": 0.8343877792358398,
+        "prevariance_roundoff_allowance": 1.5362104022642598e-05,
+        "negative_prevariances": 0,
+        "minimum_pearson_slack": 2.033765508540398,
+        "negative_entries": [],
+        "signed_edgeworth_diagnosis": {
+          "minimum_raw_variance": 0.01404222629913059,
+          "negative_variances": 0,
+          "negative_entries": []
+        }
+      },
+      {
+        "layer": 2,
+        "minimum_raw_variance": 0.009818988662948077,
+        "negative_variances": 0,
+        "minimum_raw_pre_variance": 0.5419358015060425,
+        "prevariance_roundoff_allowance": 1.1897674085048493e-05,
+        "negative_prevariances": 0,
+        "minimum_pearson_slack": 2.0196163340935334,
+        "negative_entries": [],
+        "signed_edgeworth_diagnosis": {
+          "minimum_raw_variance": 0.00930654384471656,
+          "negative_variances": 0,
+          "negative_entries": []
+        }
+      },
+      {
+        "layer": 3,
+        "minimum_raw_variance": 5.329210519599174e-05,
+        "negative_variances": 0,
+        "minimum_raw_pre_variance": 0.5204236507415771,
+        "prevariance_roundoff_allowance": 1.1984546290477738e-05,
+        "negative_prevariances": 0,
+        "minimum_pearson_slack": 2.017599218059729,
+        "negative_entries": [],
+        "signed_edgeworth_diagnosis": {
+          "minimum_raw_variance": 9.059224393276841e-05,
+          "negative_variances": 0,
+          "negative_entries": []
+        }
+      },
+      {
+        "layer": 4,
+        "minimum_raw_variance": 3.0929801408990535e-05,
+        "negative_variances": 0,
+        "minimum_raw_pre_variance": 0.3231379985809326,
+        "prevariance_roundoff_allowance": 1.244443319592392e-05,
+        "negative_prevariances": 0,
+        "minimum_pearson_slack": 1.9463177694449518,
+        "negative_entries": [],
+        "signed_edgeworth_diagnosis": {
+          "minimum_raw_variance": -0.00018210646109204093,
+          "negative_variances": 1,
+          "negative_entries": [
+            {
+              "neuron": 32,
+              "alpha": -1.8951717615127563,
+              "tau": -0.4914928674697876,
+              "omega": 0.2123003751039505,
+              "raw_mean": 0.0009002315996250176,
+              "raw_second": -0.0001812960441590775,
+              "raw_variance": -0.00018210646109204093
+            }
+          ]
+        }
+      },
+      {
+        "layer": 5,
+        "minimum_raw_variance": 2.2692622606503095e-05,
+        "negative_variances": 0,
+        "minimum_raw_pre_variance": 0.20116937160491943,
+        "prevariance_roundoff_allowance": 1.013821383821778e-05,
+        "negative_prevariances": 0,
+        "minimum_pearson_slack": 1.894829476317934,
+        "negative_entries": [],
+        "signed_edgeworth_diagnosis": {
+          "minimum_raw_variance": -0.0005869402089817854,
+          "negative_variances": 1,
+          "negative_entries": [
+            {
+              "neuron": 111,
+              "alpha": -2.028305768966675,
+              "tau": -0.44955113530158997,
+              "omega": 0.14476324617862701,
+              "raw_mean": 0.00045451310783217735,
+              "raw_second": -0.0005867336268165942,
+              "raw_variance": -0.0005869402089817854
+            }
+          ]
+        }
+      },
+      {
+        "layer": 6,
+        "minimum_raw_variance": 1.3887381091247654e-06,
+        "negative_variances": 0,
+        "minimum_raw_pre_variance": 0.21686860918998718,
+        "prevariance_roundoff_allowance": 9.823965228861198e-06,
+        "negative_prevariances": 0,
+        "minimum_pearson_slack": 1.8626127112654558,
+        "negative_entries": [],
+        "signed_edgeworth_diagnosis": {
+          "minimum_raw_variance": 2.778842872680454e-05,
+          "negative_variances": 0,
+          "negative_entries": []
+        }
+      },
+      {
+        "layer": 7,
+        "minimum_raw_variance": 4.907235559483545e-06,
+        "negative_variances": 0,
+        "minimum_raw_pre_variance": 0.2183070033788681,
+        "prevariance_roundoff_allowance": 1.1490824363136198e-05,
+        "negative_prevariances": 0,
+        "minimum_pearson_slack": 1.8819913843151959,
+        "negative_entries": [],
+        "signed_edgeworth_diagnosis": {
+          "minimum_raw_variance": 2.8842059851874903e-05,
+          "negative_variances": 0,
+          "negative_entries": []
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "source_sha256": "258bb19fbdcb6579c1bf8c7b8f908c3eb167e16efaab1d29517df30d1c7dbaae",
+  "command": "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 uv run python research/preflight.py",
+  "budget": 2199023255552,
+  "residual_limit_seconds": 0.4,
+  "wall_limit_seconds": 120.0,
+  "memory_limit_gib": 8,
+  "measurement_note": "Printed precision: wall1 decimal, residual3 decimals, C/B3 decimals, RSS2 decimals. All seven cases printed OK. RSS is observed here; virtual-memory enforcement is separately exercised by the official subprocess runner.",
+  "cases": [
+    {"width":1024,"depth":16,"finite":true,"c_over_b":0.439,"wall_seconds":19.5,"residual_seconds":0.276,"max_rss_gib":1.32,"passed":true},
+    {"width":1024,"depth":16,"finite":true,"c_over_b":0.439,"wall_seconds":19.6,"residual_seconds":0.260,"max_rss_gib":1.37,"passed":true},
+    {"width":1024,"depth":24,"finite":true,"c_over_b":0.497,"wall_seconds":21.2,"residual_seconds":0.304,"max_rss_gib":1.37,"passed":true},
+    {"width":1024,"depth":32,"finite":true,"c_over_b":0.080,"wall_seconds":8.2,"residual_seconds":0.228,"max_rss_gib":1.37,"passed":true},
+    {"width":1024,"depth":48,"finite":true,"c_over_b":0.120,"wall_seconds":11.4,"residual_seconds":0.338,"max_rss_gib":1.37,"passed":true},
+    {"width":256,"depth":8,"finite":true,"c_over_b":0.002,"wall_seconds":0.8,"residual_seconds":0.080,"max_rss_gib":1.37,"passed":true},
+    {"width":256,"depth":32,"finite":true,"c_over_b":0.001,"wall_seconds":1.7,"residual_seconds":0.200,"max_rss_gib":1.37,"passed":true}
+  ],
+  "raw_moment_guards": "Directional model rejects substantive negative pre/post variances; no component or guard was disabled for this safety run.",
+  "prediction_equivalence_report": "results/directional_perf_parity.json"
+}

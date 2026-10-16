@@ -1,0 +1,459 @@
+{
+  "ok": true,
+  "timing_role": "observational; official seven-case preflight remains required",
+  "budget": 2199023255552,
+  "wall_limit_s": 120.0,
+  "residual_limit_s": 0.4,
+  "environment": {
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "threadpools": [
+    {
+      "user_api": "blas",
+      "internal_api": "openblas",
+      "num_threads": 1,
+      "prefix": "libscipy_openblas",
+      "filepath": "/opt/uv-venv/lib/python3.10/site-packages/numpy.libs/libscipy_openblas64_-56d6093b.so",
+      "version": "0.3.29",
+      "threading_layer": "pthreads",
+      "architecture": "Haswell"
+    }
+  ],
+  "sources": {
+    "before": {
+      "path": "/tmp/directional_before_perf.py",
+      "sha256": "7f437f0b5b3e41b1341fcc1b1a5c5e858a6bfcdbbed4cd6f1d63bf276228ceb1"
+    },
+    "after": {
+      "path": "/kaggle/arc-white-phase2/candidates/k3_factored.py",
+      "sha256": "258bb19fbdcb6579c1bf8c7b8f908c3eb167e16efaab1d29517df30d1c7dbaae"
+    }
+  },
+  "scenarios": [
+    {
+      "name": "real128_s26051503",
+      "seed": 26051503,
+      "kwargs": {
+        "directional_k4": true,
+        "calib": 0.0,
+        "regen_p0": 1.6,
+        "regen_p1": 1.2,
+        "regen_p2": 1.2,
+        "regen_p3": 1.6,
+        "regen_feed": 0.5,
+        "regen_use31": 1.0,
+        "regen_start": 1,
+        "regen_end": 16,
+        "age_old": 7,
+        "rank_old": 256,
+        "k3leg_rank": 16
+      },
+      "exact_control": false,
+      "network": "/kaggle/ext/closure/network_n128_s26051503.npz",
+      "width": 128,
+      "depth": 8,
+      "before": {
+        "finite": true,
+        "shape": [
+          8,
+          128
+        ],
+        "dtype": "float32",
+        "flops": 634217602,
+        "residual_wall_time_s": 0.1520665889547672,
+        "wall_time_s": 1.3475111169973388,
+        "physical_runtime_ok": true
+      },
+      "after": {
+        "finite": true,
+        "shape": [
+          8,
+          128
+        ],
+        "dtype": "float32",
+        "flops": 631660419,
+        "residual_wall_time_s": 0.07851772199501283,
+        "wall_time_s": 0.6592257269949187,
+        "physical_runtime_ok": true
+      },
+      "prediction_parity": {
+        "shape_equal": true,
+        "finite": true,
+        "exact_predictions": true,
+        "atol": 2e-06,
+        "rtol": 2e-05,
+        "max_abs_difference": 0.0,
+        "rms_difference": 0.0,
+        "max_relative_difference": 0.0,
+        "worst_index": [
+          0,
+          0
+        ],
+        "before_at_worst": 0.5860097408294678,
+        "after_at_worst": 0.5860097408294678,
+        "per_layer_max_abs_difference": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "per_layer_rms_difference": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ok": true
+      },
+      "flops_difference": -2557183,
+      "exact_flops": false,
+      "ok": true
+    },
+    {
+      "name": "real1024_s26051511",
+      "seed": 26051511,
+      "kwargs": {
+        "directional_k4": true,
+        "calib": 0.0,
+        "regen_p0": 1.6,
+        "regen_p1": 1.2,
+        "regen_p2": 1.2,
+        "regen_p3": 1.6,
+        "regen_feed": 0.5,
+        "regen_use31": 1.0,
+        "regen_start": 1,
+        "regen_end": 16,
+        "age_old": 7,
+        "rank_old": 256,
+        "k3leg_rank": 16
+      },
+      "exact_control": false,
+      "network": "/kaggle/ext/closure/network_n1024_s26051511.npz",
+      "width": 1024,
+      "depth": 16,
+      "before": {
+        "finite": true,
+        "shape": [
+          16,
+          1024
+        ],
+        "dtype": "float32",
+        "flops": 966383462635,
+        "residual_wall_time_s": 0.4209108707145788,
+        "wall_time_s": 20.16446463300963,
+        "physical_runtime_ok": false
+      },
+      "after": {
+        "finite": true,
+        "shape": [
+          16,
+          1024
+        ],
+        "dtype": "float32",
+        "flops": 966105456876,
+        "residual_wall_time_s": 0.26164004174643196,
+        "wall_time_s": 19.02201469699503,
+        "physical_runtime_ok": true
+      },
+      "prediction_parity": {
+        "shape_equal": true,
+        "finite": true,
+        "exact_predictions": true,
+        "atol": 2e-06,
+        "rtol": 2e-05,
+        "max_abs_difference": 0.0,
+        "rms_difference": 0.0,
+        "max_relative_difference": 0.0,
+        "worst_index": [
+          0,
+          0
+        ],
+        "before_at_worst": 0.5462241172790527,
+        "after_at_worst": 0.5462241172790527,
+        "per_layer_max_abs_difference": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "per_layer_rms_difference": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ok": true
+      },
+      "flops_difference": -278005759,
+      "exact_flops": false,
+      "ok": true
+    },
+    {
+      "name": "generated256x32_s1_absent_third",
+      "seed": 1,
+      "kwargs": {
+        "directional_k4": true,
+        "calib": 0.0,
+        "regen_p0": 1.6,
+        "regen_p1": 1.2,
+        "regen_p2": 1.2,
+        "regen_p3": 1.6,
+        "regen_feed": 0.5,
+        "regen_use31": 1.0,
+        "regen_start": 1,
+        "regen_end": 16,
+        "age_old": 7,
+        "rank_old": 256,
+        "k3leg_rank": 16
+      },
+      "exact_control": false,
+      "network": "generated He weights (no input Monte Carlo)",
+      "width": 256,
+      "depth": 32,
+      "before": {
+        "finite": true,
+        "shape": [
+          32,
+          256
+        ],
+        "dtype": "float32",
+        "flops": 3256570141,
+        "residual_wall_time_s": 0.5364228578691836,
+        "wall_time_s": 4.7455791480024345,
+        "physical_runtime_ok": false
+      },
+      "after": {
+        "finite": true,
+        "shape": [
+          32,
+          256
+        ],
+        "dtype": "float32",
+        "flops": 3072961040,
+        "residual_wall_time_s": 0.2024454936326947,
+        "wall_time_s": 1.7450956489774399,
+        "physical_runtime_ok": true
+      },
+      "prediction_parity": {
+        "shape_equal": true,
+        "finite": true,
+        "exact_predictions": true,
+        "atol": 2e-06,
+        "rtol": 2e-05,
+        "max_abs_difference": 0.0,
+        "rms_difference": 0.0,
+        "max_relative_difference": 0.0,
+        "worst_index": [
+          0,
+          0
+        ],
+        "before_at_worst": 0.5545169115066528,
+        "after_at_worst": 0.5545169115066528,
+        "per_layer_max_abs_difference": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "per_layer_rms_difference": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ok": true
+      },
+      "flops_difference": -183609101,
+      "exact_flops": false,
+      "ok": true
+    },
+    {
+      "name": "legacy_false128x8_s1",
+      "seed": 1,
+      "kwargs": {
+        "kmax": 3,
+        "window": 16,
+        "iik_rank": 16,
+        "use_k4": true,
+        "omega_scale": 1.0,
+        "tau_scale": 1.0,
+        "calib": 0.0,
+        "collect": false,
+        "age_old": 6,
+        "rank_old": 256,
+        "rebuild_old": false,
+        "beta_k4": 0.0,
+        "k4_birth_rad": false,
+        "directional_k4": false,
+        "regen_p0": 0.8,
+        "regen_p1": 0.8,
+        "regen_p2": 0.8,
+        "regen_p3": 0.8,
+        "regen_feed": 1.0,
+        "regen_use31": 1.0,
+        "regen_start": 1,
+        "regen_end": 16,
+        "k3leg": true,
+        "k3leg_rank": 16
+      },
+      "exact_control": true,
+      "network": "generated He weights (no input Monte Carlo)",
+      "width": 128,
+      "depth": 8,
+      "before": {
+        "finite": true,
+        "shape": [
+          8,
+          128
+        ],
+        "dtype": "float32",
+        "flops": 653482506,
+        "residual_wall_time_s": 0.06501301392563619,
+        "wall_time_s": 0.5780373619927559,
+        "physical_runtime_ok": true
+      },
+      "after": {
+        "finite": true,
+        "shape": [
+          8,
+          128
+        ],
+        "dtype": "float32",
+        "flops": 653482506,
+        "residual_wall_time_s": 0.06673650350421667,
+        "wall_time_s": 0.5860755239846185,
+        "physical_runtime_ok": true
+      },
+      "prediction_parity": {
+        "shape_equal": true,
+        "finite": true,
+        "exact_predictions": true,
+        "atol": 0.0,
+        "rtol": 0.0,
+        "max_abs_difference": 0.0,
+        "rms_difference": 0.0,
+        "max_relative_difference": 0.0,
+        "worst_index": [
+          0,
+          0
+        ],
+        "before_at_worst": 0.5749498605728149,
+        "after_at_worst": 0.5749498605728149,
+        "per_layer_max_abs_difference": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "per_layer_rms_difference": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "ok": true
+      },
+      "flops_difference": 0,
+      "exact_flops": true,
+      "ok": true
+    }
+  ]
+}

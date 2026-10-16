@@ -1,16 +1,16 @@
-"""因子化 K=3 キュムラント伝播(源を「家族」にまとめた版)。提出用、flopscope のみ。
+"""因子化κ3家族と方向依存κ4コアによる平均推定。提出用、flopscopeのみ、入力サンプリングなし。
 
-前の版(research/archive/k3_factored_v1.py)から変えた点。いずれも ARC の公式参照実装(mlp_kprop, K=3 SIMPLE)と
-RTX 5090 上の MC 真値との層別照合で見つけた抜けを埋めるもの(research/README.md)。
+ARCのキュムラント伝播と公開再生式を参照し、rawコアと正値周辺密度で閉包する。
+数式・独立検算・実測比較は research/README.md に記録する。
 
-1. κ4 の放射部分を、平均・分散だけでなく共分散と「同じ添字が現れる 3 次の切り口」にも入れる。
-   参照実装と同じく標準化した κ4 を κ̃4_iiii = ω、κ̃4_iijj = ω/3(i≠j)と置く。
+1. κ4の対角コアを運び、非対角は共分散の方向に再生する。
+   単変量モーメントは正値密度で計算し、κ4の追加誕生を既存のκ3家族に折り込む。
 2. 同一添字の 3 次切り口 κ[h_i,h_i,h_k](と κ3[h_i])を正しい値に直す補正 Δ を、
    各層で生まれる源と同じ「家族」に入れて運ぶ。Δ は
        Δ ≈ diag(e) (ρ ∘ 1 c1ᵀ) + Q B(低ランク) + 対角
    と分けられ(主要項は誕生源の脚 A と同じ形)、別の密な脚を運ばずに済む。
 
-家族 f(層 b で誕生)が表す、層 l の事前活性化 z の 3 次キュムラント:
+基本の家族 f(層 b で誕生)の3次キュムラント(追加脚は別項として重ねる):
     T_abc = Σ_q c2_q Sym(A A M)_{abc,q} + Σ_q Sym(M M PΔ)_{abc,q}
     Sym(XXY)_{abc,q} = X_aq X_bq Y_cq + X_aq Y_bq X_cq + Y_aq X_bq X_cq
     PΔ = A diag(e) + M diag(dd) + Z Qᵀ
@@ -22,7 +22,7 @@ RTX 5090 上の MC 真値との層別照合で見つけた抜けを埋めるも�
             X_A = 2 (A∘M) diag(c2) + (M∘M) diag(e)
   家族 1 つ・1 層あたりの密な行列積は 4 回(輸送 2 + 読み出し 2)で、補正なしの源と同じ。
 
-directional_k4=True のときは G=diag(g)+λ C_off、κ4=(1/6)Sym6(G,I) を使う。
+方向依存モードは G=diag(g)+λ C_off、κ4=(1/6)Sym6(G,I) を使う。
 g は raw postactivation の K4/K22 行和から求め、次層の対角を正確に輸送する。
 再生するのは非対角だけで、postactivation 分散の逆数による射影はしない。
 κ4→κ3 の Sym3(K⊗u) は同じ A/M の読み出しへ折り込む(古い共有基底の家族も同様)。
@@ -97,56 +97,106 @@ def _pair_terms(cA, cB, R, kmax, t_iij, t_ijj, tdiag, k4, k31=None):
     κ4 放射ブロック 1 個: cA_{2+e} cB_{2+e} q_i q_j ρ^e/(4 e!) + (cA_{4+e} ω_i cB_e + 対称) ρ^e/(24 e!)
     任意の k31[i,j]=κ̃_iiij は (cA[e+3] cB[e+1] k31 + 転置側) ρ^e/(6 e!) を加える。
     """
-    out = fnp.multiply(fnp.outer(cA[1], cB[1]), R[1])
+    # 旧1次元呼び出しは outer の演算・課金順をそのまま維持する。
+    outer = fnp.outer if cA[1].ndim == cB[1].ndim == 1 else (
+        lambda a, b: a[..., :, None] * b[..., None, :]
+    )
+    out = fnp.multiply(outer(cA[1], cB[1]), R[1])
     for k in range(2, kmax + 1):
-        out = out + fnp.multiply(fnp.outer(cA[k], cB[k]), R[k])
+        out = out + fnp.multiply(outer(cA[k], cB[k]), R[k])
     if t_iij is not None:
         for k in range(2, kmax + 1):
             Rk2 = R[0] if k == 2 else R[k - 2]
             out = out + fnp.multiply(
-                fnp.outer(cA[k], cB[k - 1]) * t_iij + fnp.outer(cA[k - 1], cB[k]) * t_ijj, Rk2
+                outer(cA[k], cB[k - 1]) * t_iij + outer(cA[k - 1], cB[k]) * t_ijj, Rk2
             ) * 0.5
-    for k in range(1, kmax + 1):
-        out = out + (fnp.outer(cA[k + 3] * tdiag, cB[k]) + fnp.outer(cA[k], cB[k + 3] * tdiag)) * (
-            R[k] / 6.0
-        )
+    if tdiag is not None:
+        for k in range(1, kmax + 1):
+            out = out + (outer(cA[k + 3] * tdiag, cB[k]) + outer(cA[k], cB[k + 3] * tdiag)) * (
+                R[k] / 6.0
+            )
     if k4 is not None:
         om, k22 = k4
-        out = out + fnp.multiply(fnp.outer(cA[2], cB[2]), k22) * 0.25
+        out = out + fnp.multiply(outer(cA[2], cB[2]), k22) * 0.25
         for e in range(1, kmax + 1):
-            out = out + fnp.multiply(fnp.outer(cA[2 + e], cB[2 + e]), k22 * R[e]) * 0.25
-            out = out + (fnp.outer(cA[4 + e] * om, cB[e]) + fnp.outer(cA[e], cB[4 + e] * om)) * (
+            out = out + fnp.multiply(outer(cA[2 + e], cB[2 + e]), k22 * R[e]) * 0.25
+            out = out + (outer(cA[4 + e] * om, cB[e]) + outer(cA[e], cB[4 + e] * om)) * (
                 R[e] / 24.0
             )
     if k31 is not None:
         for e in range(kmax + 1):
             out = out + (
-                fnp.outer(cA[e + 3], cB[e + 1]) * k31
-                + fnp.outer(cA[e + 1], cB[e + 3]) * k31.T
+                outer(cA[e + 3], cB[e + 1]) * k31
+                + outer(cA[e + 1], cB[e + 3]) * k31.T
             ) * (R[e] / 6.0)
     return out
 
 
-# H_i H_j の積公式。対角の 1/2 をここに含め、各 a_i a_j は層ごとに一度だけ計算する。
-_POSITIVE_HERMITE_PRODUCTS = tuple(
-    (
-        i - 3, j - 3,
-        tuple(
-            (
-                i + j - 2 * r,
+def _positive_hermite_map(degrees):
+    """固定の [1, a_i, a_i a_j] → He_0..He_12 線形写像。"""
+    pairs = tuple((i, j) for i in range(len(degrees)) for j in range(i, len(degrees)))
+    weights = [[0.0] * (1 + len(degrees) + len(pairs)) for _ in range(13)]
+    weights[0][0] = 1.0
+    for i, degree in enumerate(degrees):
+        weights[degree][1 + i] = 1.0
+    for column, (i, j) in enumerate(pairs, 1 + len(degrees)):
+        di, dj = degrees[i], degrees[j]
+        for r in range(min(di, dj) + 1):
+            weights[di + dj - 2 * r][column] = (
                 (0.5 if i == j else 1.0)
-                * math.factorial(r) * math.comb(i, r) * math.comb(j, r),
+                * math.factorial(r) * math.comb(di, r) * math.comb(dj, r)
             )
-            for r in range(min(i, j) + 1)
-        ),
-    )
-    for i in range(3, 7)
-    for j in range(i, 7)
+    return tuple(i for i, _ in pairs), tuple(j for _, j in pairs), fnp.asarray(weights, dtype=fnp.float64)
+
+
+_POSITIVE_HERMITE_MAP = _positive_hermite_map((3, 4, 5, 6))
+_POSITIVE_EVEN_HERMITE_MAP = _positive_hermite_map((4, 6))
+
+
+def _mills_polynomials(levels):
+    """同じ Laplace 連分数を t=1/x² の正係数多項式比へ変換する。"""
+    p0 = q0 = (1.0,)
+    p1, q1 = (1.0,), (1.0, 1.0)
+    for level in range(2, levels + 1):
+        def advance(previous, previous2):
+            return tuple(
+                (previous[k] if k < len(previous) else 0.0)
+                + (float(level) * previous2[k - 1] if 0 < k <= len(previous2) else 0.0)
+                for k in range(max(len(previous), len(previous2) + 1))
+            )
+        p0, p1 = p1, advance(p1, p0)
+        q0, q1 = q1, advance(q1, q0)
+    return p1[::-1], q1[::-1]
+
+
+_MILLS_P32, _MILLS_Q32 = (
+    fnp.asarray(p, dtype=fnp.float64) for p in _mills_polynomials(32)
 )
-_RELU_POWER_FACTORS = tuple(
-    tuple(float(math.factorial(p) // math.factorial(p - k)) for k in range(p + 1))
-    for p in range(5)
-)
+
+
+def _hermite_power_matrix(top):
+    """He_k(x)を単項式基底で一括評価する固定係数。動的な計算は予測内で行う。"""
+    rows = [[1.0] + [0.0] * top]
+    for degree in range(1, top + 1):
+        row = [0.0] + rows[-1][:-1]
+        if degree > 1:
+            row = [x - float(degree - 1) * y for x, y in zip(row, rows[-2])]
+        rows.append(row)
+    return fnp.asarray(rows, dtype=fnp.float64)
+
+
+_POSITIVE_HE10 = _hermite_power_matrix(10)
+_POSITIVE_LOWER_INDICES = fnp.asarray([
+    [max(p - k, 0) for k in range(5)] for p in range(1, 5)
+], dtype=fnp.int64)
+_POSITIVE_LOWER_FACTORS = fnp.asarray([
+    [float(math.factorial(p) // math.factorial(p - k)) if k <= p else 0.0 for k in range(5)]
+    for p in range(1, 5)
+], dtype=fnp.float64)
+_POSITIVE_TAIL_INDICES = fnp.asarray([
+    [max(k - p, 0) for k in range(13)] for p in range(1, 5)
+], dtype=fnp.int64)
+_RELU_FACTORIALS = fnp.asarray([1.0, 1.0, 2.0, 6.0, 24.0], dtype=fnp.float64)
 _FP64_VARIANCE_ROUNDOFF = 64.0 * 2.0 ** -52
 _FP32_VARIANCE_ROUNDOFF = 64.0 * 2.0 ** -23
 
@@ -157,26 +207,39 @@ def _positive_relu_powers(m, var, sigma, tdiag, omega, through):
     u の 2 次補正は中心化・標準化後の H3..H8 を
     τ/6, ω/24, 0, τ²/72, τω/144, ω²/1152 にする。
     var は呼び出し規約のために残し、σ から有効分散を一度だけ作る。
+    tdiag=None は厳密な零歪度、さらに omega=None は厳密な Gaussian を表す。
     """
-    m, sigma, t, o = (
-        fnp.asarray(x, dtype=fnp.float64) for x in (m, sigma, tdiag, omega)
-    )
-    tt, to, oo = t * t, t * o, o * o
-    a = (t / 6.0 - to / 4.0,
-         o / 24.0 - tt / 8.0 - oo / 16.0,
-         -to / 12.0, -oo / 72.0)
-    b = [1.0, 0.0, 0.0, *a, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    for i, j, terms in _POSITIVE_HERMITE_PRODUCTS:
-        product = a[i] * a[j]
-        for degree, factor in terms:
-            b[degree] = b[degree] + factor * product
-    Z = b[0]
-    mq = b[1] / Z
-    vq = 1.0 + 2.0 * b[2] / Z - mq * mq
-    if not float(fnp.min(vq)) > 0.0:
-        raise ValueError("positive Hermite marginal variance must be positive")
-    s_eff = sigma / fnp.sqrt(vq)
-    m_eff = m - s_eff * mq
+    m, sigma = (fnp.asarray(x, dtype=fnp.float64) for x in (m, sigma))
+    gaussian = tdiag is None and omega is None
+    if gaussian:
+        m_eff, s_eff = m, sigma
+    else:
+        o = fnp.broadcast_to(fnp.asarray(0.0 if omega is None else omega, dtype=fnp.float64), m.shape)
+        oo = o * o
+        if tdiag is None:
+            a = fnp.stack((o / 24.0 - oo / 16.0, -oo / 72.0), axis=0)
+            left, right, weights = _POSITIVE_EVEN_HERMITE_MAP
+        else:
+            t = fnp.broadcast_to(fnp.asarray(tdiag, dtype=fnp.float64), m.shape)
+            tt, to = t * t, t * o
+            a = fnp.stack((
+                t / 6.0 - to / 4.0,
+                o / 24.0 - tt / 8.0 - oo / 16.0,
+                -to / 12.0, -oo / 72.0,
+            ), axis=0)
+            left, right, weights = _POSITIVE_HERMITE_MAP
+        products = a[list(left)] * a[list(right)]
+        features = fnp.concatenate((fnp.ones_like(m)[None, :], a, products), axis=0)
+        b = fnp.matmul(weights, features)
+        Z = b[0]
+        mq = None if tdiag is None else b[1] / Z
+        vq = 1.0 + 2.0 * b[2] / Z
+        if mq is not None:
+            vq = vq - mq * mq
+        if not float(fnp.min(vq)) > 0.0:
+            raise ValueError("positive Hermite marginal variance must be positive")
+        s_eff = sigma / fnp.sqrt(vq)
+        m_eff = m if mq is None else m - s_eff * mq
     alpha_eff = m_eff / s_eff
     Phi = fnp.asarray(flops.stats.norm.cdf(alpha_eff), dtype=fnp.float64)
     phi = fnp.asarray(flops.stats.norm.pdf(alpha_eff), dtype=fnp.float64)
@@ -185,35 +248,43 @@ def _positive_relu_powers(m, var, sigma, tdiag, omega, through):
     tail_mask = alpha_eff < -4.0
     if bool(fnp.any(tail_mask)):
         x = fnp.maximum(-alpha_eff, 4.0)
-        fraction = 0.0
-        for k in range(32, 0, -1):
-            fraction = float(k) / (x + fraction)
-        Phi = fnp.where(tail_mask, phi / (x + fraction), Phi)
-    he = _hermite_neg_alpha(alpha_eff, 10)
+        t_tail = 1.0 / (x * x)
+        mills = fnp.polyval(_MILLS_P32, t_tail) / fnp.polyval(_MILLS_Q32, t_tail) / x
+        Phi = fnp.where(tail_mask, phi * mills, Phi)
     s_powers = [None, s_eff, s_eff * s_eff]
     for p in range(3, through + 1):
         s_powers.append(s_powers[-1] * s_eff)
     moments = [Phi, m_eff * Phi + s_eff * phi]
     for p in range(2, through + 1):
         moments.append(m_eff * moments[-1] + float(p - 1) * s_powers[2] * moments[-2])
-    raw_powers = []
-    for p in range(1, through + 1):
-        factors = _RELU_POWER_FACTORS[p]
-        value = b[0] * moments[p]
-        for k in range(1, p + 1):
-            value = value + factors[k] * s_powers[k] * moments[p - k] * b[k]
-        tail = b[p + 1]
-        for k in range(p + 2, 13):
-            tail = tail + b[k] * he[k - p - 1]
-        raw_powers.append((value + factors[p] * s_powers[p] * phi * tail) / Z)
-    return raw_powers
+    if gaussian:
+        return moments[1:]
+    he = fnp.matmul(
+        _POSITIVE_HE10, fnp.vander(-alpha_eff, N=11, increasing=True).T
+    )
+    sigma_powers = fnp.stack(s_powers[1:through + 1], axis=0)
+    scaled_b = fnp.concatenate((b[:1], b[1:through + 1] * sigma_powers), axis=0)
+    moment_table = fnp.stack(moments, axis=0)
+    lower = fnp.einsum(
+        "pkn,kn,pk->pn",
+        moment_table[_POSITIVE_LOWER_INDICES[:through, :through + 1]],
+        scaled_b, _POSITIVE_LOWER_FACTORS[:through, :through + 1],
+        optimize=False,
+    )
+    he_padded = fnp.concatenate((fnp.zeros_like(m)[None, :], he), axis=0)
+    tail = fnp.einsum(
+        "kn,pkn->pn", b, he_padded[_POSITIVE_TAIL_INDICES[:through]], optimize=False
+    )
+    scales = _RELU_FACTORIALS[1:through + 1, None] * sigma_powers * phi
+    raw_powers = (lower + scales * tail) / Z
+    return [raw_powers[p] for p in range(through)]
 
 
 class Estimator(BaseEstimator):
     kmax = 3  # Mehler 展開の次数(共分散)
     window = 16  # 家族を何層分持つか(古い家族を捨てて FLOP を減らす)
     iik_rank = 16  # 補正 Δ の残差の低ランク近似の階数(None なら補正しない)
-    use_k4 = True  # κ4 の放射部分を共分散・同一添字切り口に入れる
+    use_k4 = True  # κ4補正。方向依存モードではコア・切り口・追加誕生をまとめて有効化
     omega_scale = 1.0  # ω の全体倍率(理論値 1)
     tau_scale = 1.0  # 3 次キュムラントの倍率(理論値 1)
     calib = 0.0  # 最終層の出力に掛ける縮小係数(正解 ≈ (1 - calib) × 予測)
@@ -221,27 +292,29 @@ class Estimator(BaseEstimator):
     # 古い家族の共有基底化: 年齢 age_old に達した家族は、全員で共有する n×rank_old の基底 U に
     # 射影して持つ(M ≈ U F)。輸送は U だけを運べばよく(X = U F なら T X = (T U) F で厳密)、
     # 家族ごとの n³ の行列積が n² r に減る。None なら使わない。
-    # mini で探索(0〜11 番)し検証(12〜39 番): 基底化なし 1.540e-8 → age 6・階数 256・作り直しなし 1.382e-8。
+    # 旧放射モードの探索・検証: 基底化なし1.540e-8 → age6・階数256・作り直しなし1.382e-8。
     # 作り直す版より、最初の基底を運び続ける版の方が安く(C/B -0.006)誤差も小さかった。
-    age_old = 6
+    age_old = 7
     rank_old = 256
     rebuild_old = False  # True: 家族が入るたびに基底を作り直す / False: 最初の基底を運び続ける
-    # κ4 → 3 次の誕生。どちらも T_ijk = K_ij c2_k + K_ik c2_j + K_jk c2_i(K は対称、対角 0)の形:
+    # 旧放射モード用のκ4→3次誕生。T_ijk=K_ij c2_k+K_ik c2_j+K_jk c2_i(Kは対称、対角0):
     #  (a) (2,1,1) 型 κ̃4[z_i,z_j,z_k,z_k] ≈ λ ρ_ij、λ = beta_k4 · ω: K += (λ/2) c1 ρ_off c1
     #  (b) 放射部分 κ̃4_iijj = ω/3 と ρ の辺 1 本の経路: K += (ω/12)(c3 ρ_off c1 + c1 ρ_off c3)
     beta_k4 = 0.0
     k4_birth_rad = False
-    directional_k4 = False  # raw harmonic core の対角輸送と共分散方向の再生(旧誕生項とは排他的)
-    regen_p0 = regen_p1 = regen_p2 = regen_p3 = 0.8
-    regen_feed = 1.0
+    directional_k4 = True  # Falseは旧放射モードとの対照用。旧誕生項とは排他的
+    regen_p0 = 1.6
+    regen_p1 = regen_p2 = 1.2
+    regen_p3 = 1.6
+    regen_feed = 0.5
     regen_use31 = 1.0
     regen_start = 1
-    regen_end = 16
+    regen_end = 16  # 0始まり、終端を含む
     # 3 次 (2,1) 切り口 τ と ρ の辺 1 本の経路による誕生(参照実装 AUGMENT の k3 脚)。
     # 中心 q の脚 X = M B、B_iq = (c2_i c2_q τ_iiq + c1_i c3_q τ_iqq)/2。
     # B は低ランクに近い(上位 64 方向で 70〜97%)ので B ≈ Q R(階数 k3leg_rank)と持ち、
     # 運ぶのは n×r の Xq = M Q だけにする(X = Xq R)。
-    # 検証用 28 MLP: なし 1.382e-8 → 階数 16 で 1.313e-8(生 MSE 3.5e-8 → 3.1e-8、C/B 0.394 → 0.425)。
+    # 旧放射モードの検証28MLP: なし1.382e-8 → 階数16で1.313e-8(MSE3.5e-8→3.1e-8)。
     k3leg = True
     k3leg_rank = 16
 
@@ -339,7 +412,8 @@ class Estimator(BaseEstimator):
                 dG = tg + lam * tv
 
             # --- 3 次キュムラントの読み出し(D3 = T_aaa, D21 = T_aab) ---
-            D3 = fnp.zeros(n, dtype=f32)
+            absent_third = regen and nf == 0 and U is None
+            D3 = None if absent_third else fnp.zeros(n, dtype=f32)
             D21 = None
             if nf > 0:
                 AA = A_w * A_w
@@ -472,10 +546,11 @@ class Estimator(BaseEstimator):
                     D21 = t_old if D21 is None else D21 + t_old
             D3_raw, D21_raw = D3, D21  # 家族が表す値そのもの(倍率を掛ける前)
             if self.tau_scale != 1.0:
-                D3 = D3 * self.tau_scale
+                if D3 is not None:
+                    D3 = D3 * self.tau_scale
                 if D21 is not None:
                     D21 = D21 * self.tau_scale
-            tdiag = D3 / (sigma * var)  # τ_iii = T_iii / σ³
+            tdiag = None if absent_third else D3 / (sigma * var)  # τ_iii = T_iii / σ³
             if directional:
                 omega = metric * dG / (var * var) if regen else 0.0
             else:
@@ -493,7 +568,7 @@ class Estimator(BaseEstimator):
             raw_mu = raw_ez2 = raw_ez3 = raw_ez4 = raw_var = None
             if regen:
                 raw_powers = _positive_relu_powers(
-                    m, var, sigma, tdiag, omega, 2 if last else 4
+                    m, var, sigma, tdiag, None if layer == 0 else omega, 2 if last else 4
                 )
                 raw_mu, raw_ez2 = raw_powers[:2]
                 mu_new = raw_mu.astype(f32)
@@ -515,8 +590,10 @@ class Estimator(BaseEstimator):
                 var_post = fnp.maximum(ez2 - mu_new * mu_new, 0.0)
             if self.collect:
                 self.features.append({
-                    "m": m, "sigma": sigma, "alpha": alpha, "tdiag": tdiag, "mu": mu_new,
-                    "mu_gauss": c[0], "var_post": var_post, "D3": D3_raw,
+                    "m": m, "sigma": sigma, "alpha": alpha,
+                    "tdiag": tdiag if tdiag is not None else fnp.zeros_like(m), "mu": mu_new,
+                    "mu_gauss": c[0], "var_post": var_post,
+                    "D3": D3_raw if D3_raw is not None else fnp.zeros_like(m),
                     "D21": D21_raw if D21_raw is not None else fnp.zeros((n, n), dtype=f32),
                 })
                 if regen:
@@ -544,27 +621,35 @@ class Estimator(BaseEstimator):
                 rp = rp * rho
                 R.append(rp / float(math.factorial(k)))
             k4 = k31 = None
-            if regen:
+            if regen and layer > 0:
                 dv, gv = metric / var, dG / var
                 k22 = (fnp.outer(dv, gv) + fnp.outer(gv, dv)) / 6.0
                 fnp.fill_diagonal(k22, 0.0)
                 k4 = (omega, k22)
-                k31 = (self.regen_use31 * 0.5 * lam) * dv[:, None] * rho
-                fnp.fill_diagonal(k31, 0.0)
+                if self.regen_use31 != 0.0 and strength != 0.0:
+                    k31 = (self.regen_use31 * 0.5 * lam) * dv[:, None] * rho
+                    fnp.fill_diagonal(k31, 0.0)
             elif self.use_k4 and not directional:
                 om = omega * fnp.ones_like(sigma)
                 q = fnp.sqrt(om / 3.0)
                 k4 = (om, fnp.outer(q, q))
-            Cn = _pair_terms(c, c, R, kmax, t_iij, t_ijj, tdiag, k4, k31)
-            fnp.fill_diagonal(Cn, var_post)
-            C = flops.as_symmetric(Cn, symmetry=(0, 1))
             c2p = cov21 = None
             if regen:
                 c2p = [e2_0, 2.0 * sigma * c[0], 2.0 * var * Phi]
                 for kk in range(3, kmax + 5):
                     c2p.append(2.0 * var * phi * he[kk - 3])
-                cov21 = _pair_terms(c2p, c, R, kmax, t_iij, t_ijj, tdiag, k4, k31)
-                cov22 = _pair_terms(c2p, c2p, R, kmax, t_iij, t_ijj, tdiag, k4, k31)
+                # 軸は [Hermite次数, 出力関数, 頂点]。3表面を同じ演算列で運ぶ。
+                coefficients = fnp.stack((fnp.stack(c[:kmax + 5]), fnp.stack(c2p)), axis=1)
+                pair = _pair_terms(
+                    coefficients[:, [0, 1, 1], :], coefficients[:, [0, 0, 1], :],
+                    R, kmax, t_iij, t_ijj, tdiag, k4, k31,
+                )
+                Cn, cov21, cov22 = pair[0], pair[1], pair[2]
+            else:
+                Cn = _pair_terms(c, c, R, kmax, t_iij, t_ijj, tdiag, k4, k31)
+            fnp.fill_diagonal(Cn, var_post)
+            C = flops.as_symmetric(Cn, symmetry=(0, 1))
+            if regen:
                 post_k22 = (
                     cov22 - 2.0 * mu[:, None] * cov21.T - 2.0 * mu[None, :] * cov21
                     + 4.0 * fnp.outer(mu, mu) * Cn - 2.0 * Cn * Cn

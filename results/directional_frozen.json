@@ -1,0 +1,33 @@
+{
+  "source_sha256": "258bb19fbdcb6579c1bf8c7b8f908c3eb167e16efaab1d29517df30d1c7dbaae",
+  "kwargs": {
+    "directional_k4": true,
+    "calib": 0.0,
+    "regen_p0": 1.6,
+    "regen_p1": 1.2,
+    "regen_p2": 1.2,
+    "regen_p3": 1.6,
+    "regen_feed": 0.5,
+    "regen_use31": 1.0,
+    "regen_start": 1,
+    "regen_end": 16,
+    "age_old": 7,
+    "rank_old": 256,
+    "k3leg_rank": 16
+  },
+  "final_seeds": [26051591, 26051592, 26051593, 26051594],
+  "single_thread_preflight_passed": true,
+  "single_thread_preflight_report": "results/directional_preflight.json",
+  "official_subprocess_passed": true,
+  "official_subprocess_report": "results/directional_official.json",
+  "independent_algebra_and_quadrature_checks": 146,
+  "algebra_and_quadrature_report": "results/regen_selected_audit.json",
+  "performance_prediction_equivalence_report": "results/directional_perf_parity.json",
+  "validation_report": "results/directional_positive_validation.json",
+  "validation_configuration_index": 2,
+  "protocol": "results/directional_protocol.json",
+  "baseline_commit": "b7c1a86",
+  "baseline_source_sha256": "fae93ed4f9abbcadf824465cbe224c3a3e4d3fc543af0b59aac06bf82e91df9e",
+  "frozen_before_final_predictions": true,
+  "final_evaluation_policy": "Evaluate this candidate once on the four predeclared untouched networks. No selection or retuning on final predictions. Retain original baseline if predeclared acceptance fails."
+}

@@ -1,0 +1,22 @@
+{
+  "status": "failed_residual_only",
+  "command": "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 uv run python research/preflight.py",
+  "reference_source_commit": "cf7f343",
+  "reference_note": "Same numerical code plus selected explicit defaults below; no final predictions inspected.",
+  "kwargs": {"directional_k4": true, "calib": 0.0, "regen_p0": 1.6, "regen_p1": 1.2, "regen_p2": 1.2, "regen_p3": 1.6, "regen_feed": 0.5, "regen_use31": 1.0, "regen_start": 1, "regen_end": 16, "age_old": 7, "rank_old": 256, "k3leg_rank": 16},
+  "budget": 2199023255552,
+  "residual_limit_seconds": 0.4,
+  "wall_limit_seconds": 120.0,
+  "memory_limit_gib": 8,
+  "measurement_note": "Values are the preflight's printed precision: time1 decimal, residual3 decimals, C/B3 decimals, RSS2 decimals. RSS alone does not enforce the virtual-memory cap; official subprocess verification is separate.",
+  "cases": [
+    {"width":1024,"depth":16,"finite":true,"c_over_b":0.439,"wall_seconds":20.5,"residual_seconds":0.425,"max_rss_gib":1.35,"passed":false},
+    {"width":1024,"depth":16,"finite":true,"c_over_b":0.439,"wall_seconds":20.3,"residual_seconds":0.418,"max_rss_gib":1.38,"passed":false},
+    {"width":1024,"depth":24,"finite":true,"c_over_b":0.497,"wall_seconds":23.5,"residual_seconds":0.550,"max_rss_gib":1.38,"passed":false},
+    {"width":1024,"depth":32,"finite":true,"c_over_b":0.081,"wall_seconds":12.1,"residual_seconds":0.578,"max_rss_gib":1.38,"passed":false},
+    {"width":1024,"depth":48,"finite":true,"c_over_b":0.123,"wall_seconds":18.5,"residual_seconds":0.880,"max_rss_gib":1.38,"passed":false},
+    {"width":256,"depth":8,"finite":true,"c_over_b":0.002,"wall_seconds":1.5,"residual_seconds":0.153,"max_rss_gib":1.38,"passed":true},
+    {"width":256,"depth":32,"finite":true,"c_over_b":0.001,"wall_seconds":4.7,"residual_seconds":0.534,"max_rss_gib":1.38,"passed":false}
+  ],
+  "command_wall_seconds": 103.92
+}

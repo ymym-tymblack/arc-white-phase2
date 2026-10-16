@@ -28,7 +28,8 @@ def run_network(task):
     with threadpool_limits(limits=threads):
         before = candidate(weights, seed, records, kwargs=baseline_kwargs)
         after = candidate(weights, seed, records, kwargs=kwargs)
-    p0, p1 = np.asarray(before.pop("prediction"))[-1], np.asarray(after.pop("prediction"))[-1]
+    prediction = np.asarray(after.pop("prediction"))
+    p0, p1 = np.asarray(before.pop("prediction"))[-1], prediction[-1]
     changes = []
     for record in records:
         truth = record["hmean_all_16"]
@@ -37,7 +38,8 @@ def run_network(task):
         s0 = (float(np.mean((p0-truth)**2)) - noise) * f0
         s1 = (float(np.mean((p1-truth)**2)) - noise) * f1
         changes.append(s0-s1)
-    feasible = (after["flops"] <= after["budget"] and after["wall_seconds"] <= 120.0)
+    feasible = bool(prediction.shape == weights.shape[:2] and np.isfinite(prediction).all()
+                    and after["flops"] <= after["budget"] and after["wall_seconds"] <= 120.0)
     return dict(seed=seed, baseline=before, candidate=after, feasible=feasible,
                 paired_reference_replicate_improvements=changes)
 
