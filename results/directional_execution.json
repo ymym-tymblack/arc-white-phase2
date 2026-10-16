@@ -9,7 +9,7 @@
   "passes_per_replicate": 2,
   "second_pass": "Replay the same input sample stream for centered moments; not an independent reference replicate.",
   "unique_reference_input_samples_total": 320000000,
-  "final_predictions_inspected": false,
+  "final_predictions_inspected": true,
   "reference_runs": [
     {"network_seed": 26051591, "manifest": "/kaggle/ext/closure/final_n1024_s26051591.json", "wandb_id": "gme7e6oo", "wall_seconds": 405.37},
     {"network_seed": 26051592, "manifest": "/kaggle/ext/closure/final_n1024_s26051592.json", "wandb_id": "kztj58c6", "wall_seconds": 405.40},
@@ -87,5 +87,84 @@
     "same_resources_adjusted_gain": 0.20318199732772435,
     "same_resources_extra_flops": 0.006117411751263013,
     "note": "Development ablations, not independent final tests. Effects of removing different paths are not additive."
+  },
+  "positive_validation_run": {
+    "report": "results/directional_positive_validation.json",
+    "wandb_id": "9rmdim2z",
+    "command_wall_seconds": 730.80,
+    "evaluated_configs": 5,
+    "validation_mlp_count": 28,
+    "selected_configuration_index": 2,
+    "selected_adjusted_score": 1.0794056642473458e-08,
+    "selected_adjusted_gain": 0.18065284327155318,
+    "selection_note": "Rank16 finalist beats the fast8 rank8 winner on validation; freeze it after single-thread safety without final-data tuning."
+  },
+  "preflight_before_optimization": "results/directional_preflight_before_optimization.json",
+  "intermediate_performance_preflight": {
+    "source_sha256": "be6d640b89134d8218a3865a7019d9c12b48c3d23b96afb24cde53d659c6f83f",
+    "command_wall_seconds": 86.04,
+    "passed_cases": 6,
+    "remaining_failure": {"width": 1024, "depth": 48, "residual_seconds": 0.420},
+    "finite_and_within_flop_budget_all_cases": true,
+    "next_exact_optimization": "Native batched Hermite basis and raw-moment contractions; no removed nonzero term or raised limit."
+  },
+  "optimized_safety": {
+    "source_sha256": "258bb19fbdcb6579c1bf8c7b8f908c3eb167e16efaab1d29517df30d1c7dbaae",
+    "before_optimization_commit": "cf7f343",
+    "equivalence_report": "results/directional_perf_parity.json",
+    "prediction_bitwise_equivalent_cases": 4,
+    "legacy_same_parameters_flops_exact": true,
+    "positive_audit_report": "results/regen_selected_audit.json",
+    "positive_audit_checks_passed": 146,
+    "preflight_report": "results/directional_preflight.json",
+    "passed_preflight_shapes": 7,
+    "single_thread_max_residual_seconds_printed": 0.338,
+    "single_thread_max_wall_seconds_printed": 21.2,
+    "single_thread_max_rss_gib_printed": 1.37,
+    "safety_limits_raised": false,
+    "nonzero_fourth_components_dropped": false,
+    "new_shape_specific_fallbacks": false,
+    "optimization": "Batch the three pair cuts, Hermite coefficient/basis and raw-power contractions; evaluate the same32-level Mills ratio as native polynomials; skip only exact-zero model terms.",
+    "temporary_comparison_scripts": "Removed after proof. The before source is reproducible from cf7f343; both source hashes and all comparisons remain in the equivalence report."
+  },
+  "official_smoke": {
+    "report": "results/directional_official.json",
+    "runner": "subprocess",
+    "threads": 1,
+    "mlps": 2,
+    "failures": 0,
+    "whest_validate_passed": true,
+    "focused_ruff_F_passed": true,
+    "lint_files": ["candidates/k3_factored.py", "research/regen_audit.py", "research/eval_directional_final.py", "research/search_directional_k4.py"]
+  },
+  "final_evaluation": {
+    "frozen": "results/directional_frozen.json",
+    "report": "results/directional_final.json",
+    "workers": 4,
+    "threads_per_worker": 8,
+    "wall_seconds": 37.92954852202092,
+    "candidates_evaluated": 1,
+    "accepted": true,
+    "networks": 4,
+    "improved_networks": 4,
+    "adjusted_score_gain_without_reference_noise_subtraction": 0.22310932521607585,
+    "adjusted_score_gain_with_reference_noise_subtraction": 0.23112162677121084,
+    "extra_flops": 0.034445956398503785,
+    "independent_reference_mean_improvements": [2.9339614937093226e-09, 3.0018982204779827e-09],
+    "uncertainty": "Two independent reference series and plug-in target-mean noise subtraction, not a confidence interval or a guarantee for all networks.",
+    "final_data_tuning": false,
+    "final_seeds_still_untouched": false
+  },
+  "adoption": {
+    "selected_defaults_enabled": true,
+    "package": "submission.tar.gz",
+    "package_tracked": false,
+    "package_ignore_policy": ".gitignore:13 (*.tar.gz)",
+    "implementation_commit": "a36ac59",
+    "package_sha256": "cfb1c49c92d8da99b2e2dc41f54b744f7acaff5c0eeaaf1ab15284a009dce471",
+    "package_manifest_source_sha256": "258bb19fbdcb6579c1bf8c7b8f908c3eb167e16efaab1d29517df30d1c7dbaae",
+    "package_source_matches_frozen_candidate": true,
+    "remote_submission_performed": false,
+    "inference_input_monte_carlo_samples": 0
   }
 }
