@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "goal": "Reduce actual metered FLOPs without adding cumulant formulas; input Monte Carlo remains zero.",
+  "canonical_entrypoint": "estimator.py",
+  "entrypoint_cutover_commit": "df95a29",
+  "production_note": "The user's reported1.55e-8 source artifact and actual uploaded artifact are not identified. No production-score forecast or remote submission is made.",
+  "baselines": [
+    {"name":"positive_before","commit":"a36ac59","git_path":"candidates/k3_factored.py","snapshot":"/tmp/compute_before.py","source_sha256":"258bb19fbdcb6579c1bf8c7b8f908c3eb167e16efaab1d29517df30d1c7dbaae","kwargs":{}},
+    {"name":"legacy_before","commit":"b7c1a86","git_path":"candidates/k3_factored.py","snapshot":"/tmp/compute_legacy.py","source_sha256":"fae93ed4f9abbcadf824465cbe224c3a3e4d3fc543af0b59aac06bf82e91df9e","kwargs":{}}
+  ],
+  "data": {
+    "repo":"aicrowd/arc-whestbench-public-2026",
+    "revision":"aa99830fdc09fad15407b10e8e3459d3e18bba0a",
+    "reference_samples":1000000000,
+    "search":{"split":"mini","start":0,"stop_exclusive":8},
+    "confirmation":{"split":"mini","start":0,"stop_exclusive":12},
+    "selection":{"split":"mini","start":12,"stop_exclusive":100},
+    "mini_note":"All100 mini records were inspected in earlier research; none are described as untouched tests.",
+    "final":{"split":"full","source":"/kaggle/ext/compute_full64","start":0,"stop_exclusive":64,"metadata_sha256":"2e609689ebe0fefe009d1bca762d3e0cc16f15b99d856077906af27ef19b0fbf","mini_seed_overlap":0},
+    "preparation_report":"results/compute_data.json",
+    "old_final_four":"Previously inspected seeds26051591..94 are not used for this search or final selection."
+  },
+  "search": {
+    "space":"results/compute_search_space.json",
+    "methods":["sa","ga","hill"],
+    "sa_steps":16,
+    "ga_generations":2,
+    "ga_population":6,
+    "hill_steps":2,
+    "workers":8,
+    "threads_per_worker":4,
+    "calib":0.0,
+    "checkpoint":"Every evaluation/event; source/space/dataset/indices identity is checked.",
+    "wandb":"offline"
+  },
+  "selection_policy":"Measure a small finalist set from fast8 on development12, then select a single tuned configuration by adjusted score on mini12..99. Freeze source and every configuration before any full64 prediction. Do not retune on full64.",
+  "final_roles": {
+    "tuned":"One configuration selected only on mini; eligible only if every prediction is finite, all safety checks pass, mean adjusted score improves at least3% over both feasible immutable baselines, and at least40 of64 networks improve versus positive_before.",
+    "exact_only":"Predeclared no-pruning, energy1, original positive resource settings. This is the algebraically equivalent safety alternative, not a search on full. If tuned fails its gate, retain exact-only only if full64 raw-MSE drift versus positive_before is at most0.5%, FLOPs decrease, predictions are finite, and single-thread safety passes.",
+    "exact_legacy":"A second predeclared algebraic safety alternative with the original legacy mode/resources, no pruning and energy1. Used only if both tuned and exact_only fail their gates; it must preserve legacy_before MSE within0.5%, reduce FLOPs, have zero failures and pass single-thread safety. No holdout-based parameter search is performed.",
+    "no_final_tuning":true,
+    "final_results_are_not_reusable_holdout":true
+  },
+  "safety":{"flop_budget":2199023255552,"official_threads":1,"residual_limit_s":0.4,"wall_limit_s":120.0,"memory_limit_gib":8,"no_new_inference_failure_fallback":true},
+  "submission":"Package root estimator.py and verify manifest/source hash plus subprocess behavior. Never submit remotely in this task."
+}

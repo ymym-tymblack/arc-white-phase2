@@ -1,0 +1,68 @@
+{
+  "description": "Compute-only search with selected existing cumulant coefficients frozen, fixed calib0, and an explicit directional/radial mode gene. No truth sampling or fitting.",
+  "fixed_kwargs": {
+    "kmax": 3,
+    "window": 16,
+    "use_k4": true,
+    "omega_scale": 1.0,
+    "tau_scale": 1.0,
+    "calib": 0.0,
+    "collect": false,
+    "rebuild_old": false,
+    "beta_k4": 0.0,
+    "k4_birth_rad": false,
+    "regen_p0": 1.6,
+    "regen_p1": 1.2,
+    "regen_p2": 1.2,
+    "regen_p3": 1.6,
+    "regen_feed": 0.5,
+    "regen_use31": 1.0,
+    "regen_start": 1,
+    "regen_end": 16,
+    "k3leg": true,
+    "rank_old_min": 32
+  },
+  "grid": {
+    "directional_k4": [true, false],
+    "family_prune_rel": [0.0, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3],
+    "rank_old_energy": [0.9, 0.97, 0.995, 1.0],
+    "rank_old": [64, 128, 192, 256],
+    "age_old": [3, 5, 6, 7, 8],
+    "iik_rank": [4, 8, 16],
+    "k3leg_rank": [4, 8, 16]
+  },
+  "initial": {
+    "directional_k4": true,
+    "family_prune_rel": 0.0,
+    "rank_old_energy": 1.0,
+    "rank_old": 256,
+    "age_old": 7,
+    "iik_rank": 16,
+    "k3leg_rank": 16
+  },
+  "baseline": {
+    "directional_k4": false,
+    "age_old": 6
+  },
+  "splits": {
+    "fast4": [0, 1, 2, 3],
+    "fast8": [0, 1, 2, 3, 4, 5, 6, 7],
+    "development": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    "selection": [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99],
+    "validation": [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+    "previous-development": [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99]
+  },
+  "protocol": {
+    "workers": 8,
+    "threads_per_worker": 4,
+    "flop_budget": 2199023255552,
+    "wall_limit_s": 120.0,
+    "objective": "mean(mse * max(0.1, flops / flop_budget))",
+    "calibration": "Fixed 0.0, never fitted.",
+    "initial": "Current selected estimator with pruning and adaptive-rank selection disabled; rank_old remains 256.",
+    "mode": "Both directional_k4 values are searched, ranked and eligible as SA/GA/hill seeds; False is a comparator, not a fallback.",
+    "fixed_comparisons": "Explicit fixed-config batches may override declared fixed kwargs, with all effective kwargs recorded; search seeds must match fixed_kwargs.",
+    "selection": "Search only mini0..11; fast8 uses mini0..7. Confirm on development12 and select a small finalist set on mini12..99 (88 records, all historically inspected). Other datasets require explicit source/split/indices and a fixed-config batch; no automatic old final4 use.",
+    "parallel_residual": "Recorded only; official residual safety requires a separate single-thread preflight."
+  }
+}

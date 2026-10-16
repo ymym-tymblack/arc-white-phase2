@@ -1,11 +1,14 @@
-"""Offline directional-k4 search, with measured, uncalibrated Evaluator.score.
+"""Offline measured, uncalibrated SA/GA/hill search and fixed-config batches.
 
-Default selection uses mini0..3; recheck finalists with --split development.
-Example: --methods sa ga hill --sa-steps 24 --generations 3 --population 6
-         --hill-steps 3 --indices 0 1 2 3 --output results/directional_search.json
+Default selection uses mini0..3 and the original directional-k4 search space.
+Compute search: --space results/compute_search_space.json --indices 0 1 2 3 4 5 6 7
+               --methods sa ga hill --wandb-offline --output results/compute_search.json
 Fixed-config confirmation: --evaluate-configs configs.json --split validation.
-Existing output is a source/indices-validated evaluation cache, not an exact
-mid-algorithm RNG resume. Repeated invocations append new algorithm trajectories.
+Local schema-3.0/prepared-Arrow confirmation also takes --dataset-source PATH,
+--dataset-split NAME and explicit --indices. No final dataset is selected implicitly.
+Existing explicit output is a source/space/dataset/indices-validated evaluation
+cache, not an exact mid-algorithm RNG resume. Without --output, a new report is
+created; existing checkpoints are never implicitly overwritten.
 Parallel residual is diagnostic only; run a separate single-thread preflight.
 """
 from __future__ import annotations
@@ -20,7 +23,7 @@ import random
 import sys
 import time
 
-from eval_mini import Evaluator, ROOT
+from eval_mini import DEFAULT_DATASET_SOURCE, DEFAULT_DATASET_SPLIT, Evaluator, ROOT, dataset_identity
 
 SPACE_PATH = ROOT / "results/directional_search_space.json"
 BUDGET = 2**41
@@ -32,10 +35,11 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
-def source_identity(candidate):
-    paths = (candidate, ROOT / "research/eval_mini.py", Path(__file__).resolve(), SPACE_PATH)
+def source_identity(candidate, space_path=SPACE_PATH, space=None):
+    paths = (candidate, ROOT / "research/eval_mini.py", Path(__file__).resolve(), space_path)
     sources = {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
-    return hashlib.sha256(canonical(sources).encode()).hexdigest(), sources
+    identity = dict(sources=sources, search_space=space)
+    return hashlib.sha256(canonical(identity).encode()).hexdigest(), sources
 
 
 def safe_json(value):
@@ -80,10 +84,17 @@ def normalize_config(config, space):
 class Objective:
     """One bounded 8-process x 4-thread evaluator shared by all algorithms."""
 
-    def __init__(self, candidate, indices, output, space, run_config, fresh=False, wandb_run=None):
+    def __init__(self, candidate, indices, output, space, run_config, fresh=False, wandb_run=None,
+                 dataset_source=None, dataset_split=None, space_path=SPACE_PATH):
         self.candidate, self.indices, self.output = candidate, indices, output
         self.space, self.wandb_run = space, wandb_run
-        self.source_hash, sources = source_identity(candidate)
+        self.space_path = Path(space_path).resolve()
+        self.dataset = dataset_identity(dataset_source, dataset_split)
+        # The original space fixes True and keeps False as a measured comparator.
+        # When mode is a gene, both modes participate in every search stage.
+        self.directional_only = ("directional_k4" not in space["grid"]
+                                 and space["fixed_kwargs"].get("directional_k4") is True)
+        self.source_hash, sources = source_identity(candidate, self.space_path, space)
         self.cache, self.events, self.runs = {}, [], []
         self.counts = Counter(dict.fromkeys((
             "evaluations", "feasible_evaluations", "infeasible_evaluations", "cache_hits",
@@ -91,7 +102,8 @@ class Objective:
             "ga_elites_retained", "hill_improvements",
         ), 0))
         self.ev = None
-        self.metadata = dict(schema_version=1, source_hash=self.source_hash, sources=sources,
+        self.metadata = dict(schema_version=2, source_hash=self.source_hash, sources=sources,
+                             search_space=space, space_path=str(self.space_path), dataset=self.dataset,
                              indices=indices, workers=WORKERS, threads_per_worker=THREADS,
                              flop_budget=BUDGET, wall_limit_s=WALL_LIMIT,
                              objective="mean(mse * max(0.1, flops / flop_budget))",
@@ -100,14 +112,17 @@ class Objective:
         if output.exists() and not fresh:
             previous = json.loads(output.read_text())
             meta = previous.get("metadata", {})
-            valid = (meta.get("schema_version") == 1
+            valid = (meta.get("schema_version") == 2
                      and meta.get("source_hash") == self.source_hash
+                     and meta.get("dataset") == self.dataset
+                     and meta.get("search_space") == self.space
                      and meta.get("indices") == indices)
             if valid:
                 for record in previous.get("evaluations", []):
                     kwargs = normalize_config(record["kwargs"], space)
                     expected = self.key(kwargs)
                     if (record.get("source_hash") != self.source_hash
+                            or record.get("dataset") != self.dataset
                             or record.get("indices") != indices or record.get("key") != expected):
                         raise ValueError("Invalid cache record identity; use --fresh to discard")
                     self.cache[expected] = record
@@ -116,13 +131,15 @@ class Objective:
                 self.counts.update(previous.get("counts", {}))
             else:
                 self.events.append(dict(event="cache_invalidated", previous_source=meta.get("source_hash"),
-                                        previous_indices=meta.get("indices")))
+                                        previous_indices=meta.get("indices"),
+                                        previous_dataset=meta.get("dataset")))
         self.run_id = len(self.runs)
         self.runs.append(dict(id=self.run_id, config=run_config, status="running", started=time.time()))
         self.save()
 
     def key(self, kwargs):
-        payload = dict(source_hash=self.source_hash, indices=self.indices, kwargs=kwargs)
+        payload = dict(source_hash=self.source_hash, dataset=self.dataset, search_space=self.space,
+                       indices=self.indices, kwargs=kwargs)
         return hashlib.sha256(canonical(payload).encode()).hexdigest()
 
     def save(self):
@@ -140,23 +157,29 @@ class Objective:
         self.events.append(dict(event=event, run=self.run_id, time=time.time(), **payload))
         self.save()
 
-    def ranked(self, directional_only=False):
+    def ranked(self, directional_only=False, search_only=False):
         rows = (row for row in self.cache.values() if row["feasible"]
-                and (not directional_only or row["kwargs"]["directional_k4"]))
+                and (not directional_only or row["kwargs"]["directional_k4"])
+                and (not search_only or all(row["kwargs"][name] == value
+                                            for name, value in self.space["fixed_kwargs"].items())))
         return sorted(rows, key=lambda row: row["metrics"]["adj"])
 
     def __call__(self, config, stage):
         kwargs = normalize_config(config, self.space)
-        if source_identity(self.candidate)[0] != self.source_hash:
+        if source_identity(self.candidate, self.space_path, self.space)[0] != self.source_hash:
             self.event("source_changed", stage=stage)
-            raise RuntimeError("Candidate/evaluator/search source changed during search; restart safely")
+            raise RuntimeError("Candidate/evaluator/search/space source changed during search; restart safely")
+        if dataset_identity(self.dataset["source"], self.dataset["split"]) != self.dataset:
+            self.event("dataset_changed", stage=stage)
+            raise RuntimeError("Dataset metadata changed during search; restart safely")
         key = self.key(kwargs)
         if key in self.cache:
             self.counts["cache_hits"] += 1
             row = self.cache[key]
             return row["metrics"]["adj"] if row["feasible"] else math.inf
         if self.ev is None:
-            self.ev = Evaluator(self.indices, workers=WORKERS, threads=THREADS)
+            self.ev = Evaluator(self.indices, workers=WORKERS, threads=THREADS,
+                                dataset_source=self.dataset["source"], dataset_split=self.dataset["split"])
         started = time.monotonic()
         metrics, reasons = None, []
         try:
@@ -177,14 +200,15 @@ class Objective:
                 row["feasible"] = not failures
                 row["status"] = "feasible" if not failures else "infeasible"
                 row["reasons"] = failures
-                reasons.extend(f"mini{row['idx']}:{failure}" for failure in failures)
+                reasons.extend(f"idx{row['idx']}:{failure}" for failure in failures)
             # These are the real evaluator's uncalibrated scores, not a surrogate.
             if not reasons and (metrics["mse"] < 0 or metrics["adj"] < 0):
                 reasons.append("negative_mse_or_adjusted_metric")
         except Exception as exc:
             reasons.append(f"exception:{type(exc).__name__}:{exc}")
         feasible = not reasons
-        row = dict(key=key, source_hash=self.source_hash, indices=self.indices, kwargs=kwargs,
+        row = dict(key=key, source_hash=self.source_hash, dataset=self.dataset,
+                   indices=self.indices, kwargs=kwargs,
                    stage=stage, run=self.run_id, feasible=feasible,
                    status="feasible" if feasible else "infeasible", reasons=reasons,
                    elapsed_s=time.monotonic() - started, metrics=safe_json(metrics),
@@ -266,8 +290,8 @@ def anneal(objective, start, grid, rng, steps, t0, t1):
 
 def genetic(objective, start, grid, rng, generations, population_size, mutation_rate):
     population = [dict(start)]
-    # Seed with already-measured directional finalists, then explore distinct genomes.
-    for row in objective.ranked(directional_only=True):
+    # Seed from measured finalists in every searched mode, then explore.
+    for row in objective.ranked(directional_only=objective.directional_only, search_only=True):
         if row["kwargs"] not in population and len(population) < population_size:
             population.append(row["kwargs"])
     while len(population) < population_size:
@@ -359,10 +383,13 @@ def main():
     parser.add_argument("--population", type=int, default=6)
     parser.add_argument("--mutation-rate", type=float, default=0.15)
     parser.add_argument("--hill-steps", type=int, default=3)
-    parser.add_argument("--split", choices=("fast4", "development", "validation", "previous-development"), default="fast4")
+    parser.add_argument("--split", default="fast4", help="Named index set in the selected search space")
     parser.add_argument("--indices", nargs="+", type=int)
+    parser.add_argument("--space", type=Path, default=SPACE_PATH)
+    parser.add_argument("--dataset-source", default=DEFAULT_DATASET_SOURCE, help="Whestbench local directory or Hub repo")
+    parser.add_argument("--dataset-split", default=DEFAULT_DATASET_SPLIT, help="Dataset split, distinct from --split index sets")
     parser.add_argument("--candidate", type=Path, default=ROOT / "estimator.py")
-    parser.add_argument("--output", type=Path, default=ROOT / "results/directional_search.json")
+    parser.add_argument("--output", type=Path, help="Checkpoint/report path; omitted creates a new uniquely named report")
     parser.add_argument("--evaluate-configs", type=Path, help="Fixed-config batch; skips all search algorithms")
     parser.add_argument("--fresh", action="store_true", help="Discard any cache in the output file")
     parser.add_argument("--wandb-offline", action="store_true")
@@ -374,12 +401,23 @@ def main():
         parser.error("SA temperatures must be finite and positive")
     if not 0 <= args.mutation_rate <= 1:
         parser.error("Mutation rate must lie in [0, 1]")
-    space = json.loads(SPACE_PATH.read_text())
+    args.space = args.space.resolve()
+    space = json.loads(args.space.read_text())
+    if args.indices is None and args.split not in space["splits"]:
+        parser.error(f"Unknown --split {args.split!r}; choose from {sorted(space['splits'])} or use --indices")
+    dataset = dataset_identity(args.dataset_source, args.dataset_split)
+    is_mini = dataset["source"] == DEFAULT_DATASET_SOURCE and dataset["split"] == DEFAULT_DATASET_SPLIT
+    if not is_mini and args.indices is None:
+        parser.error("Non-mini dataset confirmation requires explicit --indices")
     indices = args.indices if args.indices is not None else space["splits"][args.split]
-    if len(set(indices)) != len(indices) or any(index < 0 or index >= 100 for index in indices):
-        parser.error("Indices must be unique mini indices in 0..99")
-    if args.evaluate_configs is None and any(index >= 12 for index in indices):
+    if not indices or any(type(index) is not int or index < 0 for index in indices) or len(set(indices)) != len(indices):
+        parser.error("Indices must be nonempty, unique nonnegative integers")
+    if is_mini and any(index >= 100 for index in indices):
+        parser.error("Mini indices must lie in 0..99")
+    if args.evaluate_configs is None and (not is_mini or any(index >= 12 for index in indices)):
         parser.error("Search selection is restricted to mini0..11; use --evaluate-configs for confirmation")
+    if args.output is None:
+        args.output = ROOT / "results" / f"{args.space.stem}_{time.time_ns()}.json"
     configs = ([normalize_config(config, space) for config in load_configs(args.evaluate_configs)]
                if args.evaluate_configs else None)
     run_config = {name: str(value) if isinstance(value, Path) else value for name, value in vars(args).items()}
@@ -390,7 +428,8 @@ def main():
     objective = None
     try:
         objective = Objective(args.candidate.resolve(), indices, args.output.resolve(), space,
-                              run_config, args.fresh, wandb_run)
+                              run_config, args.fresh, wandb_run, args.dataset_source,
+                              args.dataset_split, args.space)
         rng = random.Random(args.seed)
         if configs is not None:
             for config in configs:
@@ -398,10 +437,11 @@ def main():
             objective.event("batch_complete", configs=len(configs))
         else:
             start = normalize_config({}, space)
-            objective({**start, **space["baseline"]}, "baseline")
+            if "baseline" in space:
+                objective({**start, **space["baseline"]}, "baseline")
             objective(start, "initial")
             for method in args.methods:
-                ranked = objective.ranked(directional_only=True)
+                ranked = objective.ranked(directional_only=objective.directional_only, search_only=True)
                 if ranked:
                     start = dict(ranked[0]["kwargs"])
                 objective.event("stage_start", method=method, start=start)

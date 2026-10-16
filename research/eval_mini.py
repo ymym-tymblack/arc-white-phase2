@@ -5,6 +5,7 @@ whest run を介さず、MLP をプロセスごとにキャッシュして素早
 """
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import os
 import sys
@@ -14,15 +15,34 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_DATASET_SOURCE = "aicrowd/arc-whestbench-public-2026"
+DEFAULT_DATASET_SPLIT = "mini"
+DEFAULT_DATASET_REVISION = "v2-phase2"
 _STATE = {}
 
 
-def _init(threads: int):
+def dataset_identity(dataset_source=None, dataset_split=None):
+    """Resolve the loader arguments and pin local schema-3.0 metadata bytes."""
+    source = str(dataset_source) if dataset_source is not None else DEFAULT_DATASET_SOURCE
+    split = dataset_split if dataset_split is not None else DEFAULT_DATASET_SPLIT
+    local = Path(source).expanduser()
+    if local.exists():
+        local = local.resolve()
+        return dict(source=str(local), split=split, revision=None,
+                    metadata_sha256=hashlib.sha256((local / "metadata.json").read_bytes()).hexdigest())
+    return dict(source=source, split=split,
+                revision=DEFAULT_DATASET_REVISION if source == DEFAULT_DATASET_SOURCE else None,
+                metadata_sha256=None)
+
+
+def _init(threads: int, dataset=None):
     os.environ["OMP_NUM_THREADS"] = str(threads)
     os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
     os.environ["MKL_NUM_THREADS"] = str(threads)
     sys.path.insert(0, str(ROOT))
     sys.path.insert(0, str(ROOT / "scripts"))
+    _STATE.clear()
+    _STATE["dataset"] = dataset if dataset is not None else dataset_identity()
 
 
 def _load_mlp(idx: int):
@@ -33,8 +53,9 @@ def _load_mlp(idx: int):
     from whestbench import load_dataset
 
     if "ds" not in _STATE:
+        dataset = _STATE.get("dataset") or dataset_identity()
         _STATE["ds"] = load_dataset(
-            "aicrowd/arc-whestbench-public-2026", revision="v2-phase2", split="mini"
+            dataset["source"], revision=dataset["revision"], split=dataset["split"]
         )
     ds = _STATE["ds"]
     mlp = whestbench.mlp_at(ds, idx)
@@ -63,6 +84,15 @@ def _run(args):
         pred = est.predict(mlp, budget)
     dt = time.time() - t
     pred = np.asarray(pred, dtype=np.float64)
+    expected = (mlp.depth, mlp.width)
+    if pred.shape != expected:
+        raise ValueError(f"prediction_shape_mismatch:idx={idx}:expected={expected}:got={pred.shape}")
+    if not np.isfinite(pred).all():
+        raise ValueError(f"nonfinite_prediction:idx={idx}")
+    if truth.shape != expected:
+        raise ValueError(f"truth_shape_mismatch:idx={idx}:expected={expected}:got={truth.shape}")
+    if not np.isfinite(truth).all():
+        raise ValueError(f"nonfinite_truth:idx={idx}")
     mse = float(((pred[-1] - truth[-1]) ** 2).mean())
     all_mse = float(((pred - truth) ** 2).mean())
     used = int(ctx.flops_used)
@@ -83,13 +113,15 @@ SPLITS = {
 
 
 class Evaluator:
-    def __init__(self, idxs, workers: int = 4, threads: int = 8):
+    def __init__(self, idxs, workers: int = 8, threads: int = 4,
+                 dataset_source=None, dataset_split=None):
         self.idxs = list(idxs)
+        self.dataset_identity = dataset_identity(dataset_source, dataset_split)
         # fork だと親が先に numpy を読み込んだ場合に BLAS のスレッド数が子へ引き継がれ
         # 過剰購読になる(実測で 9 倍遅くなった)。spawn で子ごとに環境変数を反映する。
         self.pool = ProcessPoolExecutor(
             max_workers=workers, mp_context=mp.get_context("spawn"),
-            initializer=_init, initargs=(threads,))
+            initializer=_init, initargs=(threads, self.dataset_identity))
 
     def score(self, path: str, **kwargs):
         res = list(self.pool.map(_run, [(path, kwargs, i) for i in self.idxs]))
