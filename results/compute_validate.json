@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "class_name": "Estimator",
+  "module_name": "_whestbench_submission_c5f23bb17b17",
+  "output_shape": [
+    2,
+    4
+  ],
+  "whestbench_version": "0.16.1"
+}

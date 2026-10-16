@@ -309,7 +309,7 @@ def _old_basis(candidate, energy, minimum):
 class Estimator(BaseEstimator):
     kmax = 3  # Mehler 展開の次数(共分散)
     window = 16  # 家族を何層分持つか(古い家族を捨てて FLOP を減らす)
-    iik_rank = 16  # 補正 Δ の残差の低ランク近似の階数(None なら補正しない)
+    iik_rank = 4  # 補正 Δ の残差の低ランク近似の階数(None なら補正しない)
     use_k4 = True  # κ4補正。方向依存モードではコア・切り口・追加誕生をまとめて有効化
     omega_scale = 1.0  # ω の全体倍率(理論値 1)
     tau_scale = 1.0  # 3 次キュムラントの倍率(理論値 1)
@@ -320,7 +320,7 @@ class Estimator(BaseEstimator):
     # 家族ごとの n³ の行列積が n² r に減る。None なら使わない。
     # 旧放射モードの探索・検証: 基底化なし1.540e-8 → age6・階数256・作り直しなし1.382e-8。
     # 作り直す版より、最初の基底を運び続ける版の方が安く(C/B -0.006)誤差も小さかった。
-    age_old = 7
+    age_old = 6
     rank_old = 256
     family_prune_rel = 0.0  # 家族別の対角寄与ヒューリスティック。0 は評価・間引きとも無効
     rank_old_energy = 1.0  # 1 は固定階数(小行列 SVD も実行しない)
@@ -345,7 +345,7 @@ class Estimator(BaseEstimator):
     # 運ぶのは n×r の Xq = M Q だけにする(X = Xq R)。
     # 旧放射モードの検証28MLP: なし1.382e-8 → 階数16で1.313e-8(MSE3.5e-8→3.1e-8)。
     k3leg = True
-    k3leg_rank = 16
+    k3leg_rank = 4
 
     def __init__(self, **kwargs) -> None:
         self._setup_rng = None

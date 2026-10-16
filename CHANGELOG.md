@@ -10,6 +10,15 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ## Unreleased
 
+### この作業ツリーの推定器改善（2026-10-16）
+
+- 提出入口をrootの `estimator.py` に統一し、ゼロ出力テンプレートと研究候補の誤梱包経路を解消。競技規則の変更ではない。
+- 古い家族の残差・κ3脚を薄い因子で再利用し、不要な密行列積と最終層の全共分散を削減。同じ保持設定でFLOP8.53%減。
+- SA・GA・山登りで資源配分を選択し、保持年齢6・補助階数4/4を固定。主共有階数256、4次の式と係数は維持。
+- 凍結後の公式full64で、最適化前の方向依存版に対してFLOP15.80%減・MSE6.20%増・調整後スコア10.58%減、推定失敗0件を観測。
+- 1スレッド7形状・公式subprocess・146項目の物理監査を通過。数値収集器の診断辞書混入と幅超過階数のreshape失敗も修正。
+- 枝刈り・小行列SVDによる階数配分は動作検証済みだが、今回の採用版では無効。本番スコアの予測・外部提出は行わない。
+
 ### BREAKING CHANGE
 
 - **Phase 2 is the live round.** The graded shape is now **width 1024 x depth 16**

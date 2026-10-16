@@ -1,0 +1,128 @@
+{
+  "canonical_entrypoint": "estimator.py",
+  "adopted": "tuned",
+  "source_sha256": "e681975f4d9024e85097f671b9a6020b02663b08a77d482b55e7de528041c88e",
+  "archive": {
+    "path": "submission.tar.gz",
+    "sha256": "82f8ba9b81d1be0890ffd442f63dd2c43a3e7d33caaacc7acaffe503c6141ba2",
+    "manifest_and_extracted_source_match_frozen": true,
+    "tracked_in_git": false,
+    "remote_submitted": false
+  },
+  "commits": {
+    "entrypoint": "df95a29",
+    "kernel": "874862c",
+    "search_infrastructure": "6add2d0",
+    "mini_selection": "97a21aa",
+    "safety_and_freeze": "6385a66"
+  },
+  "reports": {
+    "protocol": "results/compute_protocol.json",
+    "frozen": "results/compute_frozen.json",
+    "final": "results/compute_final.json",
+    "canonical_subprocess": "results/compute_canonical_smoke.json",
+    "validation": "results/compute_validate.json",
+    "physical": "results/regen_compute_audit.json"
+  },
+  "offline_compute": {
+    "workers": 8,
+    "threads_per_worker": 4,
+    "official_safety_threads": 1,
+    "input_monte_carlo_samples": 0,
+    "new_reference_monte_carlo_samples": 0,
+    "training": false,
+    "reference": "Official baked N=1e9 targets"
+  },
+  "wandb": [
+    {
+      "stage": "sa_ga_hill",
+      "id": "8x53yu0l",
+      "directory": "/kaggle/ext/wandb/wandb/offline-run-20261016_040848-8x53yu0l"
+    },
+    {
+      "stage": "development12",
+      "id": "tglzlcqd",
+      "directory": "/kaggle/ext/wandb/wandb/offline-run-20261016_043513-tglzlcqd"
+    },
+    {
+      "stage": "selection88",
+      "id": "ws5re0nt",
+      "directory": "/kaggle/ext/wandb/wandb/offline-run-20261016_044022-ws5re0nt"
+    }
+  ],
+  "checkpoints": "Every heuristic evaluation and event; final evaluation every network.",
+  "final_summaries": {
+    "positive_before": {
+      "adjusted_score": 1.073382327483046e-8,
+      "mse": 2.4432038024421994e-8,
+      "failures": 0,
+      "mean_flops": 966105526476,
+      "mean_C_over_B": 0.4393339288417337,
+      "max_wall_seconds": 39.98121481799171,
+      "parallel_residual_note": "Diagnostic only; single-thread preflight is the official residual gate."
+    },
+    "legacy_before": {
+      "adjusted_score": 1.3631149155563015e-8,
+      "mse": 3.2095604767088037e-8,
+      "failures": 0,
+      "mean_flops": 933935166840,
+      "mean_C_over_B": 0.4247045430201979,
+      "max_wall_seconds": 29.03058148000855,
+      "parallel_residual_note": "Diagnostic only; single-thread preflight is the official residual gate."
+    },
+    "exact_only": {
+      "adjusted_score": 9.817678379738073e-9,
+      "mse": 2.4430605092562025e-8,
+      "failures": 0,
+      "mean_flops": 883699071181,
+      "mean_C_over_B": 0.40185981160038864,
+      "max_wall_seconds": 40.16207659902284,
+      "parallel_residual_note": "Diagnostic only; single-thread preflight is the official residual gate."
+    },
+    "exact_legacy": {
+      "adjusted_score": 1.2134740903861528e-8,
+      "mse": 3.209368554059759e-8,
+      "failures": 0,
+      "mean_flops": 831458805625,
+      "mean_C_over_B": 0.37810368922919224,
+      "max_wall_seconds": 28.83705099800136,
+      "parallel_residual_note": "Diagnostic only; single-thread preflight is the official residual gate."
+    },
+    "tuned": {
+      "adjusted_score": 9.59809388958124e-9,
+      "mse": 2.5946857495975363e-8,
+      "failures": 0,
+      "mean_flops": 813448473721,
+      "mean_C_over_B": 0.3699135385072623,
+      "max_wall_seconds": 39.15672372598783,
+      "parallel_residual_note": "Diagnostic only; single-thread preflight is the official residual gate."
+    }
+  },
+  "gains": {
+    "vs_positive": 0.10580846695253221,
+    "vs_legacy": 0.29587052565820127,
+    "exact_only_vs_positive": 0.08535121844614657,
+    "heuristic_vs_exact": 0.022366233814505088
+  },
+  "verification": {
+    "rank_regression": "1 passed",
+    "ruff_F": "11 changed Python files passed",
+    "physical_checks": 146,
+    "algebraic_scenarios": 20,
+    "all_three_profiles_seven_safety_cases_passed": true,
+    "all_three_profile_official_subprocess_failures": 0,
+    "canonical_two_network_subprocess_failures": 0
+  },
+  "environment": {
+    "whestbench": "0.16.1",
+    "flopscope": "0.12.1",
+    "python": "3.10.12",
+    "numpy": "2.2.6"
+  },
+  "limitations": [
+    "Public full0..63 and all mini records are now consumed; not reusable holdouts.",
+    "The source producing the reported1.55e-8 leaderboard score is not identified.",
+    "A zero-template entrypoint and a locally generated zero-template archive were found; these do not identify the actual uploaded artifact.",
+    "No forecast of the private leaderboard result is made."
+  ]
+}
