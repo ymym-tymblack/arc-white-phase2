@@ -71,6 +71,17 @@ miniは過去に全100個を参照済みなので、探索8個・開発確認12�
 最終予測前に全ソースと候補を固定し、`results/compute_protocol.json` の事前条件で採否を決める。
 本番の非公開スコアへの換算予測はしない。
 
+全3提出プロファイルで1スレッド・7形状の検査と、公式隔離サブプロセスのmini1件を通過した。
+選択版の7形状の最大wallは20.87秒、residualは0.3303秒、観測最大RSSは1.309GiB。
+各プロファイルの `results/compute_safety_*.json` と `results/compute_subprocess_*.json` に記録し、
+検査済みのソースhash・無引数の既定設定・採用条件を `results/compute_frozen.json` に固定した。
+幅128の実ネットワークの再生・射影・生分散と正値密度の独立検算146項目も通過した
+(`results/regen_compute_audit.json`)。実質的な負分散をクリップして隠す変更はしていない。
+
+`collect=True` の `features[layer]["compute"]` は整数の診断辞書で、モーメント配列ではない。
+数値NPZの収集器は全層に存在する9配列を明示し、再生監査はこの診断辞書を数値変換から分離した。
+両収集器を実行し、Gaussian初層の解析分散と数値NPZの読み出しを確認した。
+
 
 ## 従来ラウンドの結果(mini、N=1e9 の正解)
 

@@ -31,8 +31,10 @@ if __name__ == "__main__":
         mlp = MLP(width=w.shape[1], depth=w.shape[0], weights=[x for x in w], seed=i)
         est = mod.Estimator(collect=True, **kw)
         pred, fl = run_estimator(est, mlp)
+        # 全層で定義されるモーメントだけを積む。compute は辞書、κ4の出生後診断は最終層にない。
+        keys = ("m", "sigma", "alpha", "tdiag", "mu", "mu_gauss", "var_post", "D3", "D21")
         feats = {k: np.stack([np.asarray(f[k], dtype=np.float64) for f in est.features])
-                 for k in est.features[0]}
+                 for k in keys}
         np.savez(OUT / f"{name}_{i:03d}.npz", pred=pred, **feats)
         per = ((pred - d["all_layer_means"]) ** 2).mean(1)
         print(f"{name} MLP {i}: 最終層 {per[-1]:.3e} 全層 {per.mean():.3e} C/B {fl / 2**41:.3f}", flush=True)

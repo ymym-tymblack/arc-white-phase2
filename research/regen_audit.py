@@ -476,7 +476,7 @@ def audit_network(audit, args, module):
             prediction = est.predict(mlp, args.budget)
         prediction = np.asarray(prediction)
         features = [{key: np.asarray(value, dtype=np.float64) for key, value in item.items()
-                     if value is not None} for item in est.features]
+                     if value is not None and key != "compute"} for item in est.features]
     finally:
         est.teardown()
     if len(features) != depth:

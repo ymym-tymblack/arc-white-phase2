@@ -1,0 +1,183 @@
+{
+  "source": "/tmp/compute_exact_legacy.py",
+  "source_sha256": "6b12b6f87bc9f3023a78868462a0675b4f137100877041f43bdba07ce9f65d6b",
+  "threads": 1,
+  "limits": {
+    "flops": 2199023255552,
+    "residual_seconds": 0.4,
+    "wall_seconds": 120.0,
+    "rss_gib": 8.0
+  },
+  "memory_note": "RSS checked here; official subprocess separately enforces virtual memory.",
+  "cases": [
+    {
+      "width": 1024,
+      "depth": 16,
+      "repeat": 0,
+      "passed": true,
+      "shape": [
+        16,
+        1024
+      ],
+      "finite": true,
+      "flops": 831458805625,
+      "C_over_B": 0.37810368922919224,
+      "wall_seconds": 15.825132294005016,
+      "residual_seconds": 0.21061357922735624,
+      "max_rss_gib": 1.1847381591796875,
+      "checks": {
+        "shape": true,
+        "finite": true,
+        "flops": true,
+        "wall": true,
+        "residual": true,
+        "memory": true
+      }
+    },
+    {
+      "width": 1024,
+      "depth": 16,
+      "repeat": 1,
+      "passed": true,
+      "shape": [
+        16,
+        1024
+      ],
+      "finite": true,
+      "flops": 831458805625,
+      "C_over_B": 0.37810368922919224,
+      "wall_seconds": 15.347072901990032,
+      "residual_seconds": 0.20282900842721574,
+      "max_rss_gib": 1.2169609069824219,
+      "checks": {
+        "shape": true,
+        "finite": true,
+        "flops": true,
+        "wall": true,
+        "residual": true,
+        "memory": true
+      }
+    },
+    {
+      "width": 1024,
+      "depth": 24,
+      "repeat": 2,
+      "passed": true,
+      "shape": [
+        24,
+        1024
+      ],
+      "finite": true,
+      "flops": 1083082582877,
+      "C_over_B": 0.492528935354585,
+      "wall_seconds": 17.05566717099282,
+      "residual_seconds": 0.23370921742753126,
+      "max_rss_gib": 1.2169609069824219,
+      "checks": {
+        "shape": true,
+        "finite": true,
+        "flops": true,
+        "wall": true,
+        "residual": true,
+        "memory": true
+      }
+    },
+    {
+      "width": 1024,
+      "depth": 32,
+      "repeat": 3,
+      "passed": true,
+      "shape": [
+        32,
+        1024
+      ],
+      "finite": true,
+      "flops": 169527181793,
+      "C_over_B": 0.07709203682361476,
+      "wall_seconds": 4.352513602992985,
+      "residual_seconds": 0.1197786181292031,
+      "max_rss_gib": 1.2169609069824219,
+      "checks": {
+        "shape": true,
+        "finite": true,
+        "flops": true,
+        "wall": true,
+        "residual": true,
+        "memory": true
+      }
+    },
+    {
+      "width": 1024,
+      "depth": 48,
+      "repeat": 4,
+      "passed": true,
+      "shape": [
+        48,
+        1024
+      ],
+      "finite": true,
+      "flops": 256462660049,
+      "C_over_B": 0.11662571525857857,
+      "wall_seconds": 6.735825405019568,
+      "residual_seconds": 0.18413873630925082,
+      "max_rss_gib": 1.2169609069824219,
+      "checks": {
+        "shape": true,
+        "finite": true,
+        "flops": true,
+        "wall": true,
+        "residual": true,
+        "memory": true
+      }
+    },
+    {
+      "width": 256,
+      "depth": 8,
+      "repeat": 5,
+      "passed": true,
+      "shape": [
+        8,
+        256
+      ],
+      "finite": true,
+      "flops": 4386362849,
+      "C_over_B": 0.0019946868856095534,
+      "wall_seconds": 0.7067895529908128,
+      "residual_seconds": 0.06662923414842226,
+      "max_rss_gib": 1.2169609069824219,
+      "checks": {
+        "shape": true,
+        "finite": true,
+        "flops": true,
+        "wall": true,
+        "residual": true,
+        "memory": true
+      }
+    },
+    {
+      "width": 256,
+      "depth": 32,
+      "repeat": 6,
+      "passed": true,
+      "shape": [
+        32,
+        256
+      ],
+      "finite": true,
+      "flops": 2745327713,
+      "C_over_B": 0.001248430504801945,
+      "wall_seconds": 1.0225921649835072,
+      "residual_seconds": 0.1128946011303924,
+      "max_rss_gib": 1.2169609069824219,
+      "checks": {
+        "shape": true,
+        "finite": true,
+        "flops": true,
+        "wall": true,
+        "residual": true,
+        "memory": true
+      }
+    }
+  ],
+  "passed": true
+}

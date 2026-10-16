@@ -3,10 +3,8 @@ import multiprocessing as mp
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
 
 sys.path.insert(0, "research")
-import eval_mini  # noqa: E402
 from eval_mini import ROOT, _init, _load_mlp  # noqa: E402
 
 
@@ -28,8 +26,9 @@ def _collect(idx):
     with flops.BudgetContext(flop_budget=budget, wall_time_limit_s=120.0, quiet=True) as ctx:
         pred = est.predict(mlp, budget)
     pred = np.asarray(pred, dtype=np.float64)
-    feats = {k: np.stack([np.asarray(f[k], dtype=np.float64) for f in est.features[:]]) for k in est.features[0]}
-    # 最終層のみ features に入る(最終層は break 前に追加される)ので 16 行
+    # 全層で定義される配列だけを保存し、辞書のcomputeや途中層だけのκ4診断を混ぜない。
+    keys = ("m", "sigma", "alpha", "tdiag", "mu", "mu_gauss", "var_post", "D3", "D21")
+    feats = {k: np.stack([np.asarray(f[k], dtype=np.float64) for f in est.features]) for k in keys}
     w = [np.asarray(x, dtype=np.float64) for x in mlp.weights]
     wnorm2 = np.stack([(x**2).sum(0) for x in w])  # (depth, n)
     wsum = np.stack([x.sum(0) for x in w])
