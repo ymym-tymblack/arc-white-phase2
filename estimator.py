@@ -280,6 +280,32 @@ def _positive_relu_powers(m, var, sigma, tdiag, omega, through):
     return [raw_powers[p] for p in range(through)]
 
 
+def _compact_family_columns(value, keep, count, columns):
+    """横並びの家族ブロックを一括で間引く。None の脚は作らない。"""
+    if value is None:
+        return None
+    if value.ndim == 1:
+        return fnp.reshape(fnp.reshape(value, (count, columns))[keep], (-1,))
+    return fnp.reshape(
+        fnp.reshape(value, (value.shape[0], count, columns))[:, keep, :],
+        (value.shape[0], len(keep) * columns),
+    )
+
+
+def _old_basis(candidate, energy, minimum):
+    """小さい QR の R のエネルギーで共有基底を選ぶ。energy=1 は SVD 不要。"""
+    basis, rotation = fnp.linalg.qr(candidate)
+    if energy < 1.0:
+        left, singular, _ = fnp.linalg.svd(rotation, full_matrices=False)
+        cumulative = fnp.cumsum(singular * singular)
+        used = int(fnp.searchsorted(cumulative, energy * cumulative[-1])) + 1
+        used = min(basis.shape[1], max(minimum, used))
+        left = left[:, :used]
+        basis = fnp.matmul(basis, left)
+        rotation = fnp.matmul(left.T, rotation)
+    return basis, rotation
+
+
 class Estimator(BaseEstimator):
     kmax = 3  # Mehler 展開の次数(共分散)
     window = 16  # 家族を何層分持つか(古い家族を捨てて FLOP を減らす)
@@ -296,6 +322,9 @@ class Estimator(BaseEstimator):
     # 作り直す版より、最初の基底を運び続ける版の方が安く(C/B -0.006)誤差も小さかった。
     age_old = 7
     rank_old = 256
+    family_prune_rel = 0.0  # 家族別の対角寄与ヒューリスティック。0 は評価・間引きとも無効
+    rank_old_energy = 1.0  # 1 は固定階数(小行列 SVD も実行しない)
+    rank_old_min = 32
     rebuild_old = False  # True: 家族が入るたびに基底を作り直す / False: 最初の基底を運び続ける
     # 旧放射モード用のκ4→3次誕生。T_ijk=K_ij c2_k+K_ik c2_j+K_jk c2_i(Kは対称、対角0):
     #  (a) (2,1,1) 型 κ̃4[z_i,z_j,z_k,z_k] ≈ λ ρ_ij、λ = beta_k4 · ω: K += (λ/2) c1 ρ_off c1
@@ -353,7 +382,7 @@ class Estimator(BaseEstimator):
         f32 = fnp.float32
 
         mu = fnp.zeros(n, dtype=f32)
-        C = flops.as_symmetric(fnp.eye(n, dtype=f32), symmetry=(0, 1))
+        C = None  # 最初の入力共分散 I は密に作らず WᵀW として縮約する
         core_diag = fnp.zeros(n, dtype=f32) if regen else None
         var_prev = fnp.ones(n, dtype=f32) if regen else None
         # 家族は「横並び」の行列で持つ: 家族 f の脚が列ブロック [f n, (f+1) n) を占める。
@@ -364,12 +393,14 @@ class Estimator(BaseEstimator):
         u_w = None  # directional 誕生の固定脚 d*c2/var(旧経路は c2 を使う)
         c1_o = g_o = u_o = None  # 共有基底でも X を Ao/Mo と同じ列スケールから再構成
         X3q_w = R3_s = None  # k3 脚の誕生項: X = Xq R(家族ごと)
-        FX3_o = None  # 古い層: X = U FX3
+        FX3q_o = R3_o = None  # 古い家族も X3 = (U FX3q) R3 の細い脚で持つ
         r3 = min(self.k3leg_rank, n)
-        FX_o = FU_o = None  # 古い層の κ4 誕生項: X = U FX、u = U FU
-        # 古い層(共有基底): U は n×r、FA/FM/FP は r×(家族数·n)、A = U FA, M = U FM, PΔ = U FP
-        U = FA_o = FM_o = FP_o = c2_o = None
+        # 固定列スケールと細い残差を保存し、密な PΔ/κ3 脚は射影・回転しない。
+        U = FA_o = FM_o = FZ_o = c2_o = e_o = dd_o = Q_o = None
         r_old = None if self.rank_old is None else min(self.rank_old, n)
+        old_min = 0 if r_old is None else min(r_old, max(1, self.rank_old_min))
+        prune = self.family_prune_rel > 0.0
+        birth_w = fnp.empty(0, dtype=fnp.int64) if prune else None
         rows = []
 
         for layer, w in enumerate(mlp.weights):
@@ -377,16 +408,23 @@ class Estimator(BaseEstimator):
 
             # --- 線形層: z の平均・共分散 ---
             m = w.T @ mu
-            S = fnp.einsum("ij,ia,jb->ab", C, w, w)
-            if regen:
+            if layer == 0:
+                if last:
+                    raw_pre_var = fnp.sum(w * w, axis=0)
+                else:
+                    S = fnp.matmul(w.T, w)
+                    raw_pre_var = fnp.diag(S)
+            elif last:
+                raw_pre_var = fnp.sum(w * fnp.matmul(C, w), axis=0)
+            else:
+                S = fnp.einsum("ij,ia,jb->ab", C, w, w)
                 raw_pre_var = fnp.diag(S)
+            if regen:
                 # 共分散の対角スケールに対する FP32 丸め誤差だけを許す。
                 pre_roundoff = _FP32_VARIANCE_ROUNDOFF * fnp.max(fnp.abs(raw_pre_var))
                 if not float(fnp.min(raw_pre_var) + pre_roundoff) >= 0.0:
                     raise ValueError("directional_k4 preactivation variance exceeds negative roundoff allowance")
-                var = fnp.maximum(raw_pre_var, 1e-12)
-            else:
-                var = fnp.maximum(fnp.diag(S), 1e-12)
+            var = fnp.maximum(raw_pre_var, 1e-12)
             sigma = fnp.sqrt(var)
             alpha = m / sigma
             phi = flops.stats.norm.pdf(alpha).astype(f32)
@@ -415,6 +453,7 @@ class Estimator(BaseEstimator):
             absent_third = regen and nf == 0 and U is None
             D3 = None if absent_third else fnp.zeros(n, dtype=f32)
             D21 = None
+            score_w = score_o = None
             if nf > 0:
                 AA = A_w * A_w
                 d3 = AA * M_w * c2_w[None, :]
@@ -432,12 +471,18 @@ class Estimator(BaseEstimator):
                         PD = PD + fnp.reshape(ZQ, (n, nf * n))
                     d3 = d3 + MM * PD
                 D3 = 3.0 * fnp.sum(d3, axis=1)
-                if regen and g_w is not None:
+                if prune:
+                    score_w = fnp.sum(fnp.reshape(fnp.abs(d3), (n, nf, n)), axis=(0, 2))
+                if g_w is not None:
                     X_w = (A_w - M_w * c1_w[None, :]) * g_w[None, :]
                     M3 = fnp.reshape(M_w, (n, nf, n))
                     kd = 2.0 * fnp.sum(fnp.reshape(X_w * M_w, (n, nf, n)), axis=2)
-                    uu = fnp.einsum("nfm,fm->nf", M3, fnp.reshape(u_w, (nf, n)))
+                    uu = fnp.einsum(
+                        "nfm,fm->nf", M3, fnp.reshape(u_w if regen else c2_w, (nf, n))
+                    )
                     D3 = D3 + 3.0 * fnp.sum(kd * uu, axis=1)
+                    if prune:
+                        score_w = score_w + fnp.sum(fnp.abs(kd * uu), axis=0)
                 if not last:
                     XM = AA * c2_w[None, :]
                     XA = 2.0 * (A_w * M_w) * c2_w[None, :]
@@ -447,7 +492,7 @@ class Estimator(BaseEstimator):
                     if X3_w is not None:
                         XM = XM + 2.0 * (X3_w * A_w)
                         XA = XA + 2.0 * (X3_w * M_w)
-                    if regen and g_w is not None:
+                    if g_w is not None:
                         # X の転置側も A/M の既存 2 積へ折り込み、家族ごとの n³ 積を増やさない。
                         fold_m = A_w * g_w[None, :] - 2.0 * M_w * (c1_w * g_w)[None, :]
                         XM = XM + fnp.reshape(
@@ -458,7 +503,7 @@ class Estimator(BaseEstimator):
                             (n, nf * n),
                         )
                     D21 = fnp.matmul(XM, M_w.T) + fnp.matmul(XA, A_w.T)
-                    if regen and g_w is not None:
+                    if g_w is not None:
                         D21 = D21 + fnp.matmul(kd, uu.T)
                     if X3_w is not None:
                         Y3 = fnp.einsum("nkm,krm->nkr", fnp.reshape(M_w * A_w, (n, nf, n)), R3_s)
@@ -466,53 +511,55 @@ class Estimator(BaseEstimator):
                     if Z_w is not None:
                         Y = fnp.einsum("nkm,kmr->nkr", fnp.reshape(MM, (n, nf, n)), Q_s)
                         D21 = D21 + fnp.matmul(fnp.reshape(Y, (n, nf * rank)), Z_w.T)
-                if g_w is not None and not directional:
-                    # κ4 誕生項: T = Sym3(K ⊗ u)、K = X Mᵀ(X = (A - M c1) (λ/2) c1)、u = M c2
-                    # 輸送後 K = Y + Yᵀ、Y = X Mᵀ、X = (A - M c1) g、u = M c2
-                    X_w = (A_w - M_w * c1_w[None, :]) * g_w[None, :]
-                    X3 = fnp.reshape(X_w, (n, nf, n))
-                    M3 = fnp.reshape(M_w, (n, nf, n))
-                    kd = 2.0 * fnp.sum(X3 * M3, axis=2)  # (n, nf): K の対角
-                    uu = fnp.einsum("anq,nq->an", M3, fnp.reshape(c2_w, (nf, n)))  # (n, nf)
-                    D3 = D3 + 3.0 * fnp.sum(kd * uu, axis=1)
-                    if not last:
-                        Xu = fnp.reshape(X3 * uu[:, :, None], (n, nf * n))
-                        Mu = fnp.reshape(M3 * uu[:, :, None], (n, nf * n))
-                        D21 = D21 + fnp.matmul(kd, uu.T) + 2.0 * (
-                            fnp.matmul(Xu, M_w.T) + fnp.matmul(Mu, X_w.T)
-                        )
             if U is not None:
-                # 古い層の読み出し: 密な脚を U から作り、D21 は r 次元で足し合わせてから U ᵀ を掛ける
+                # 基本脚だけを復元。残差・κ3脚の転置読み出しは細い因子へ畳み込む。
+                ko = c2_o.shape[0] // n
                 Ao = fnp.matmul(U, FA_o)
                 Mo = fnp.matmul(U, FM_o)
-                Po = fnp.matmul(U, FP_o)
                 AAo = Ao * Ao
-                MMo = Mo * Mo
-                D3 = D3 + 3.0 * fnp.sum(AAo * Mo * c2_o[None, :] + MMo * Po, axis=1)
+                d3o = AAo * Mo * c2_o[None, :]
+                Po = MMo = None
+                if e_o is not None:
+                    MMo = Mo * Mo
+                    Po = Ao * e_o[None, :] + Mo * dd_o[None, :]
+                    if FZ_o is not None:
+                        Zo = fnp.matmul(U, FZ_o)
+                        Po = Po + fnp.reshape(
+                            fnp.einsum("nkr,kmr->nkm", fnp.reshape(Zo, (n, ko, rank)), Q_o),
+                            (n, ko * n),
+                        )
+                    d3o = d3o + MMo * Po
                 X3o = None
-                if FX3_o is not None:
-                    X3o = fnp.matmul(U, FX3_o)
-                    D3 = D3 + 6.0 * fnp.sum(X3o * Mo * Ao, axis=1)
-                if regen and g_o is not None:
-                    ko = g_o.shape[0] // n
+                if FX3q_o is not None:
+                    X3qo = fnp.matmul(U, FX3q_o)
+                    X3o = fnp.reshape(
+                        fnp.einsum("nkr,krm->nkm", fnp.reshape(X3qo, (n, ko, r3)), R3_o),
+                        (n, ko * n),
+                    )
+                    d3o = d3o + 2.0 * X3o * Mo * Ao
+                D3 = D3 + 3.0 * fnp.sum(d3o, axis=1)
+                if prune:
+                    score_o = fnp.sum(fnp.reshape(fnp.abs(d3o), (n, ko, n)), axis=(0, 2))
+                if g_o is not None:
                     Xo = (Ao - Mo * c1_o[None, :]) * g_o[None, :]
                     Mo3 = fnp.reshape(Mo, (n, ko, n))
                     kdo = 2.0 * fnp.sum(fnp.reshape(Xo * Mo, (n, ko, n)), axis=2)
-                    uo = fnp.einsum("nfm,fm->nf", Mo3, fnp.reshape(u_o, (ko, n)))
+                    uo = fnp.einsum(
+                        "nfm,fm->nf", Mo3, fnp.reshape(u_o if regen else c2_o, (ko, n))
+                    )
                     D3 = D3 + 3.0 * fnp.sum(kdo * uo, axis=1)
-                if FX_o is not None and last:
-                    ko = FX_o.shape[1] // n
-                    Xo3 = fnp.reshape(fnp.matmul(U, FX_o), (n, ko, n))
-                    uo = fnp.matmul(U, FU_o)
-                    kdo = 2.0 * fnp.sum(Xo3 * fnp.reshape(Mo, (n, ko, n)), axis=2)
-                    D3 = D3 + 3.0 * fnp.sum(kdo * uo, axis=1)
+                    if prune:
+                        score_o = score_o + fnp.sum(fnp.abs(kdo * uo), axis=0)
                 if not last:
-                    XMo = AAo * c2_o[None, :] + 2.0 * (Mo * Po)
+                    XMo = AAo * c2_o[None, :]
                     XAo = 2.0 * (Ao * Mo) * c2_o[None, :]
+                    if Po is not None:
+                        XMo = XMo + 2.0 * Mo * Po + MMo * dd_o[None, :]
+                        XAo = XAo + MMo * e_o[None, :]
                     if X3o is not None:
                         XMo = XMo + 2.0 * (X3o * Ao)
                         XAo = XAo + 2.0 * (X3o * Mo)
-                    if regen and g_o is not None:
+                    if g_o is not None:
                         fold_m = Ao * g_o[None, :] - 2.0 * Mo * (c1_o * g_o)[None, :]
                         XMo = XMo + fnp.reshape(
                             2.0 * uo[:, :, None] * fnp.reshape(fold_m, (n, ko, n)), (n, ko * n)
@@ -523,28 +570,64 @@ class Estimator(BaseEstimator):
                         )
                         thin = fnp.matmul(kdo, uo.T)
                         D21 = thin if D21 is None else D21 + thin
-                    Racc = (
-                        fnp.matmul(XMo, FM_o.T)
-                        + fnp.matmul(XAo, FA_o.T)
-                        + fnp.matmul(MMo, FP_o.T)
-                    )
+                    Racc = fnp.matmul(XMo, FM_o.T) + fnp.matmul(XAo, FA_o.T)
+                    if FZ_o is not None:
+                        Y = fnp.einsum("nkm,kmr->nkr", fnp.reshape(MMo, (n, ko, n)), Q_o)
+                        Racc = Racc + fnp.matmul(fnp.reshape(Y, (n, ko * rank)), FZ_o.T)
                     if X3o is not None:
-                        Racc = Racc + 2.0 * fnp.matmul(Mo * Ao, FX3_o.T)
-                    if FX_o is not None:
-                        ko = FX_o.shape[1] // n
-                        Xo3 = fnp.reshape(fnp.matmul(U, FX_o), (n, ko, n))
-                        uo = fnp.matmul(U, FU_o)  # (n, ko)
-                        Mo3 = fnp.reshape(Mo, (n, ko, n))
-                        kdo = 2.0 * fnp.sum(Xo3 * Mo3, axis=2)
-                        D3 = D3 + 3.0 * fnp.sum(kdo * uo, axis=1)
-                        D21 = (fnp.matmul(kdo, uo.T) if D21 is None else D21 + fnp.matmul(kdo, uo.T))
-                        Racc = Racc + 2.0 * (
-                            fnp.matmul(fnp.reshape(Xo3 * uo[:, :, None], (n, ko * n)), FM_o.T)
-                            + fnp.matmul(fnp.reshape(Mo3 * uo[:, :, None], (n, ko * n)), FX_o.T)
+                        Y3 = fnp.einsum("nkm,krm->nkr", fnp.reshape(Mo * Ao, (n, ko, n)), R3_o)
+                        Racc = Racc + 2.0 * fnp.matmul(
+                            fnp.reshape(Y3, (n, ko * r3)), FX3q_o.T
                         )
                     t_old = fnp.matmul(Racc, U.T)
                     D21 = t_old if D21 is None else D21 + t_old
             D3_raw, D21_raw = D3, D21  # 家族が表す値そのもの(倍率を掛ける前)
+            # 読み出した層の寄与を指標に、次の輸送前に家族を間引く。
+            # 対角寄与の L1 は安価なヒューリスティックで、全テンソルの誤差上界ではない。
+            removed_w = removed_o = 0
+            young_read = nf
+            old_read = 0 if U is None else c2_o.shape[0] // n
+            old_rank_read = 0 if U is None else U.shape[1]
+            if prune and not last and (score_w is not None or score_o is not None):
+                scores = [score for score in (score_w, score_o) if score is not None]
+                cutoff = self.family_prune_rel * fnp.max(fnp.concatenate(scores))
+                if score_w is not None:
+                    keep = fnp.flatnonzero(score_w > cutoff)
+                    removed_w = nf - len(keep)
+                    if removed_w:
+                        A_w = _compact_family_columns(A_w, keep, nf, n)
+                        M_w = _compact_family_columns(M_w, keep, nf, n)
+                        c2_w = _compact_family_columns(c2_w, keep, nf, n)
+                        e_w = _compact_family_columns(e_w, keep, nf, n)
+                        dd_w = _compact_family_columns(dd_w, keep, nf, n)
+                        c1_w = _compact_family_columns(c1_w, keep, nf, n)
+                        g_w = _compact_family_columns(g_w, keep, nf, n)
+                        u_w = _compact_family_columns(u_w, keep, nf, n)
+                        Z_w = _compact_family_columns(Z_w, keep, nf, rank)
+                        Q_s = None if Q_s is None else Q_s[keep]
+                        X3q_w = _compact_family_columns(X3q_w, keep, nf, r3)
+                        R3_s = None if R3_s is None else R3_s[keep]
+                        birth_w = birth_w[keep]
+                        nf = len(keep)
+                if score_o is not None:
+                    keep = fnp.flatnonzero(score_o > cutoff)
+                    removed_o = old_read - len(keep)
+                    if removed_o:
+                        FA_o = _compact_family_columns(FA_o, keep, old_read, n)
+                        FM_o = _compact_family_columns(FM_o, keep, old_read, n)
+                        c2_o = _compact_family_columns(c2_o, keep, old_read, n)
+                        e_o = _compact_family_columns(e_o, keep, old_read, n)
+                        dd_o = _compact_family_columns(dd_o, keep, old_read, n)
+                        c1_o = _compact_family_columns(c1_o, keep, old_read, n)
+                        g_o = _compact_family_columns(g_o, keep, old_read, n)
+                        u_o = _compact_family_columns(u_o, keep, old_read, n)
+                        FZ_o = _compact_family_columns(FZ_o, keep, old_read, rank)
+                        Q_o = None if Q_o is None else Q_o[keep]
+                        FX3q_o = _compact_family_columns(FX3q_o, keep, old_read, r3)
+                        R3_o = None if R3_o is None else R3_o[keep]
+                        if not len(keep):
+                            U = FA_o = FM_o = FZ_o = c2_o = e_o = dd_o = Q_o = None
+                            c1_o = g_o = u_o = FX3q_o = R3_o = None
             if self.tau_scale != 1.0:
                 if D3 is not None:
                     D3 = D3 * self.tau_scale
@@ -595,6 +678,11 @@ class Estimator(BaseEstimator):
                     "mu_gauss": c[0], "var_post": var_post,
                     "D3": D3_raw if D3_raw is not None else fnp.zeros_like(m),
                     "D21": D21_raw if D21_raw is not None else fnp.zeros((n, n), dtype=f32),
+                    "compute": {
+                        "young_families_read": young_read, "old_families_read": old_read,
+                        "young_families_removed": removed_w, "old_families_removed": removed_o,
+                        "old_rank": old_rank_read,
+                    },
                 })
                 if regen:
                     self.features[-1].update({
@@ -756,7 +844,10 @@ class Estimator(BaseEstimator):
                     Z_new = fnp.matmul(wT, fnp.matmul(Q_new.T, resid).T)  # (n, r)
 
             # --- 家族の輸送(次層の重みと ReLU の傾き Φ)と誕生 ---
-            if nf > 0 and nf >= window:
+            expires = nf > 0 and (
+                layer - int(birth_w[0]) >= window if prune else nf >= window
+            )
+            if expires:
                 # 最も古い家族(左端のブロック)は窓の外に出るので運ばずに捨てる
                 A_w, M_w, c2_w = A_w[:, n:], M_w[:, n:], c2_w[n:]
                 if X3q_w is not None:
@@ -770,6 +861,8 @@ class Estimator(BaseEstimator):
                     if regen:
                         u_w = u_w[n:]
                 nf -= 1
+                if prune:
+                    birth_w = birth_w[1:]
             if U is not None:
                 U = fnp.matmul(wT, Phi[:, None] * U)
             if nf > 0:
@@ -810,76 +903,74 @@ class Estimator(BaseEstimator):
                     if Z_new is not None:
                         Z_w = fnp.concatenate([Z_w, Z_new], axis=1)
                         Q_s = fnp.concatenate([Q_s, fnp.reshape(Q_new, (1, n, rank))], axis=0)
+                if prune:
+                    birth_w = fnp.concatenate((birth_w, fnp.asarray([layer], dtype=fnp.int64)))
                 nf += 1
-            if self.age_old is not None and nf > self.age_old:
-                # 最も古い若い家族(年齢 age_old)を共有基底へ移す
+            transfer = self.age_old is not None and r_old is not None and nf > 0
+            if transfer:
+                transfer = (
+                    layer - int(birth_w[0]) >= self.age_old if prune else nf > self.age_old
+                )
+            if transfer:
+                # 最も古い若い家族を共有基底へ移す。固定列スケールは射影しない。
                 A_f, M_f, c2_f = A_w[:, :n], M_w[:, :n], c2_w[:n]
-                X3_f = None
-                if X3q_w is not None:
-                    X3_f = fnp.matmul(X3q_w[:, :r3], R3_s[0])
-                    X3q_w, R3_s = X3q_w[:, r3:], R3_s[1:]
-                X_f = None
-                if g_w is not None:
-                    if regen:
-                        c1_f, g_f, u_f = c1_w[:n], g_w[:n], u_w[:n]
-                        if g_o is None:
-                            c1_o, g_o, u_o = c1_f, g_f, u_f
-                        else:
-                            c1_o = fnp.concatenate([c1_o, c1_f])
-                            g_o = fnp.concatenate([g_o, g_f])
-                            u_o = fnp.concatenate([u_o, u_f])
-                        u_w = u_w[n:]
-                    else:
-                        X_f = (A_f - M_f * c1_w[:n][None, :]) * g_w[:n][None, :]
-                    c1_w, g_w = c1_w[n:], g_w[n:]
-                PD_f = M_f * dd_w[:n][None, :] if dd_w is not None else fnp.zeros((n, n), dtype=f32)
-                if e_w is not None:
-                    PD_f = PD_f + A_f * e_w[:n][None, :]
-                if Z_w is not None:
-                    PD_f = PD_f + fnp.matmul(Z_w[:, :rank], Q_s[0].T)
                 A_w, M_w, c2_w = A_w[:, n:], M_w[:, n:], c2_w[n:]
-                if e_w is not None:
-                    e_w, dd_w = e_w[n:], dd_w[n:]
-                if Z_w is not None:
-                    Z_w, Q_s = Z_w[:, rank:], Q_s[1:]
                 nf -= 1
-                # 新しい基底: 移す家族の伝播脚 M の主要な列空間(乱択レンジファインダー、べき乗 1 回)
+                if prune:
+                    birth_w = birth_w[1:]
+                # 再直交化だけなら QR の R が既存基底の座標変換そのもの。
                 if U is None or self.rebuild_old:
                     Yb = fnp.matmul(M_f, w_next[:, n - r_old:])
                     Yb = fnp.matmul(M_f, fnp.matmul(M_f.T, Yb))
-                    U_new, _ = fnp.linalg.qr(Yb)
+                    U_new, _ = _old_basis(Yb, self.rank_old_energy, old_min)
+                    Tm = None if U is None else fnp.matmul(U_new.T, U)
                 else:
-                    U_new, _ = fnp.linalg.qr(U)  # 運んだ基底を正規直交に戻すだけ
+                    U_new, Tm = _old_basis(U, self.rank_old_energy, old_min)
                 if U is not None:
-                    Tm = fnp.matmul(U_new.T, U)  # 既存の古い家族を新しい基底で表し直す
                     FA_o = fnp.matmul(Tm, FA_o)
                     FM_o = fnp.matmul(Tm, FM_o)
-                    FP_o = fnp.matmul(Tm, FP_o)
-                    if FX_o is not None:
-                        FX_o = fnp.matmul(Tm, FX_o)
-                        FU_o = fnp.matmul(Tm, FU_o)
-                    if FX3_o is not None:
-                        FX3_o = fnp.matmul(Tm, FX3_o)
-                fa, fm, fp = (fnp.matmul(U_new.T, X) for X in (A_f, M_f, PD_f))
+                    if FZ_o is not None:
+                        FZ_o = fnp.matmul(Tm, FZ_o)
+                    if FX3q_o is not None:
+                        FX3q_o = fnp.matmul(Tm, FX3q_o)
+                fa, fm = fnp.matmul(U_new.T, A_f), fnp.matmul(U_new.T, M_f)
                 if U is None:
-                    FA_o, FM_o, FP_o, c2_o = fa, fm, fp, c2_f
+                    FA_o, FM_o, c2_o = fa, fm, c2_f
                 else:
                     FA_o = fnp.concatenate([FA_o, fa], axis=1)
                     FM_o = fnp.concatenate([FM_o, fm], axis=1)
-                    FP_o = fnp.concatenate([FP_o, fp], axis=1)
                     c2_o = fnp.concatenate([c2_o, c2_f])
-                if X3_f is not None:
-                    fx3 = fnp.matmul(U_new.T, X3_f)
-                    FX3_o = fx3 if FX3_o is None else fnp.concatenate([FX3_o, fx3], axis=1)
-                if X_f is not None:
-                    fx = fnp.matmul(U_new.T, X_f)
-                    fu = fnp.matmul(U_new.T, fnp.matmul(M_f, c2_f))[:, None]
-                    if FX_o is None:
-                        FX_o, FU_o = fx, fu
-                    else:
-                        FX_o = fnp.concatenate([FX_o, fx], axis=1)
-                        FU_o = fnp.concatenate([FU_o, fu], axis=1)
+                if e_w is not None:
+                    ef, ddf = e_w[:n], dd_w[:n]
+                    e_o = ef if e_o is None else fnp.concatenate([e_o, ef])
+                    dd_o = ddf if dd_o is None else fnp.concatenate([dd_o, ddf])
+                    e_w, dd_w = e_w[n:], dd_w[n:]
+                if Z_w is not None:
+                    fz = fnp.matmul(U_new.T, Z_w[:, :rank])
+                    FZ_o = fz if FZ_o is None else fnp.concatenate([FZ_o, fz], axis=1)
+                    Q_o = Q_s[:1] if Q_o is None else fnp.concatenate([Q_o, Q_s[:1]], axis=0)
+                    Z_w, Q_s = Z_w[:, rank:], Q_s[1:]
+                if X3q_w is not None:
+                    fx3q = fnp.matmul(U_new.T, X3q_w[:, :r3])
+                    FX3q_o = fx3q if FX3q_o is None else fnp.concatenate([FX3q_o, fx3q], axis=1)
+                    R3_o = R3_s[:1] if R3_o is None else fnp.concatenate([R3_o, R3_s[:1]], axis=0)
+                    X3q_w, R3_s = X3q_w[:, r3:], R3_s[1:]
+                if g_w is not None:
+                    c1f, gf = c1_w[:n], g_w[:n]
+                    c1_o = c1f if c1_o is None else fnp.concatenate([c1_o, c1f])
+                    g_o = gf if g_o is None else fnp.concatenate([g_o, gf])
+                    c1_w, g_w = c1_w[n:], g_w[n:]
+                    if regen:
+                        uf = u_w[:n]
+                        u_o = uf if u_o is None else fnp.concatenate([u_o, uf])
+                        u_w = u_w[n:]
                 U = U_new
+            if self.collect:
+                self.features[-1]["compute"].update({
+                    "young_families_next": nf,
+                    "old_families_next": 0 if U is None else c2_o.shape[0] // n,
+                    "old_rank_next": 0 if U is None else U.shape[1],
+                })
 
         if self.calib:
             rows[-1] = rows[-1] * (1.0 - self.calib)
