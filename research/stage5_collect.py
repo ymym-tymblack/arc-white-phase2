@@ -17,7 +17,7 @@ def _collect(idx):
     from whestbench import SetupContext
 
     mlp, truth = _load_mlp(idx)
-    spec = importlib.util.spec_from_file_location("cand_k3", str(ROOT / "candidates/k3_factored.py"))
+    spec = importlib.util.spec_from_file_location("cand_k3", str(ROOT / "estimator.py"))
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)

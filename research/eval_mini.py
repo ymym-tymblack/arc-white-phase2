@@ -131,5 +131,5 @@ class Evaluator:
 if __name__ == "__main__":
     ev = Evaluator(range(4))
     t = time.time()
-    r = ev.score(str(ROOT / "candidates/k3_factored.py"))
+    r = ev.score(str(ROOT / "estimator.py"))
     print({k: v for k, v in r.items() if k != "per"}, f"{time.time()-t:.0f}s")

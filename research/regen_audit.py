@@ -599,7 +599,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=504211)
     parser.add_argument("--network", type=Path)
-    parser.add_argument("--candidate", type=Path, default=ROOT / "candidates/k3_factored.py")
+    parser.add_argument("--candidate", type=Path, default=ROOT / "estimator.py")
     parser.add_argument("--kwargs", "--candidate-kwargs", default="{}", help="candidate constructor JSON")
     parser.add_argument("--budget", type=int, default=2**41)
     parser.add_argument("--wall", type=float, default=120.0)

@@ -4,6 +4,15 @@
 
 # ARC WhiteBox Estimation Challenge 2026 - Starter Kit
 
+## この作業ツリーの提出入口
+
+現在の `estimator.py` はゼロ出力テンプレートではなく、因子化κ3・方向依存κ4の実装です。
+研究ハーネス・通常の `--estimator estimator.py`・単一ファイルの梱包は同じ実装を参照します。
+旧 `candidates/k3_factored.py` は移動済みで、互換用の二重実装は置きません。
+単独実行のMCは比較用の参照作成だけで、`Estimator.predict()` は入力をサンプリングしません。
+実験結果と採否は [research/README.md](research/README.md) を参照してください。
+以前の少数MLPでの改善は本番改善の証明ではなく、提出スコアの見積もりは撤回しています。
+
 <div align="center">
 
 <a href="https://www.aicrowd.com/challenges/arc-white-box-estimation-challenge-2026"><img alt="Challenge" src="https://img.shields.io/badge/AIcrowd-Challenge_Page-f0524d?style=for-the-badge"></a>

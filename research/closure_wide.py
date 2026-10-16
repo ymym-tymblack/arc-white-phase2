@@ -56,7 +56,7 @@ def candidate(weights, seed, records, path=None, kwargs=None):
     import flopscope.numpy as fnp
     from whestbench import MLP, SetupContext
 
-    path = ROOT / "candidates/k3_factored.py" if path is None else Path(path)
+    path = ROOT / "estimator.py" if path is None else Path(path)
     spec = importlib.util.spec_from_file_location("closure_wide_candidate", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

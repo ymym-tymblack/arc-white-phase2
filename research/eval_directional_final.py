@@ -53,7 +53,7 @@ def main():
     args = parser.parse_args()
     frozen = json.loads(args.frozen.read_text())
     protocol = json.loads((ROOT / "results/directional_protocol.json").read_text())
-    source = ROOT / "candidates/k3_factored.py"
+    source = ROOT / "estimator.py"
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     if digest != frozen["source_sha256"]:
         raise ValueError("Frozen candidate source hash differs from current estimator")

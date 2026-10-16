@@ -13,7 +13,7 @@ if __name__ == "__main__":
     split = sys.argv[1]
     idxs = SPLITS[split] if split in SPLITS else [int(x) for x in split.split(",")]
     configs = json.loads(sys.argv[2])
-    path = sys.argv[3] if len(sys.argv) > 3 else str(ROOT / "candidates/k3_factored.py")
+    path = sys.argv[3] if len(sys.argv) > 3 else str(ROOT / "estimator.py")
     ev = Evaluator(idxs, workers=8, threads=4)
     for kw in configs:
         t = time.time()

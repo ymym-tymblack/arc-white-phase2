@@ -13,7 +13,7 @@ sys.path.insert(0, "/kaggle/arc-white-phase2")
 from measure_layer_error import run_estimator  # noqa: E402
 from whestbench import MLP  # noqa: E402
 
-spec = importlib.util.spec_from_file_location("cand", "/kaggle/arc-white-phase2/candidates/k3_factored.py")
+spec = importlib.util.spec_from_file_location("cand", "/kaggle/arc-white-phase2/estimator.py")
 mod = importlib.util.module_from_spec(spec)
 sys.modules["cand"] = mod
 spec.loader.exec_module(mod)

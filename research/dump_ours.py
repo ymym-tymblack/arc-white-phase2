@@ -20,7 +20,7 @@ if __name__ == "__main__":
     from whestbench import MLP
 
     name, kw, idxs = sys.argv[1], json.loads(sys.argv[2]), [int(x) for x in sys.argv[3:]]
-    spec = importlib.util.spec_from_file_location("cand", ROOT / "candidates/k3_factored.py")
+    spec = importlib.util.spec_from_file_location("cand", ROOT / "estimator.py")
     mod = importlib.util.module_from_spec(spec)
     sys.modules["cand"] = mod
     spec.loader.exec_module(mod)

@@ -18,7 +18,7 @@ import flopscope as flops
 import flopscope.numpy as fnp
 from whestbench import BaseEstimator
 
-from candidates.k3_factored import _hermite_neg_alpha, _pair_terms
+from estimator import _hermite_neg_alpha, _pair_terms
 
 
 class Estimator(BaseEstimator):

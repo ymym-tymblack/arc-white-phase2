@@ -361,7 +361,7 @@ def main():
     parser.add_argument("--hill-steps", type=int, default=3)
     parser.add_argument("--split", choices=("fast4", "development", "validation", "previous-development"), default="fast4")
     parser.add_argument("--indices", nargs="+", type=int)
-    parser.add_argument("--candidate", type=Path, default=ROOT / "candidates/k3_factored.py")
+    parser.add_argument("--candidate", type=Path, default=ROOT / "estimator.py")
     parser.add_argument("--output", type=Path, default=ROOT / "results/directional_search.json")
     parser.add_argument("--evaluate-configs", type=Path, help="Fixed-config batch; skips all search algorithms")
     parser.add_argument("--fresh", action="store_true", help="Discard any cache in the output file")

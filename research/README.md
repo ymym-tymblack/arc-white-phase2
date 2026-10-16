@@ -1,15 +1,15 @@
 # K=3＋方向依存4次キュムラント伝播(Phase 2 向け推定器)
 
-提出候補は `candidates/k3_factored.py`(単一ファイル、flopscope のみ)。
+提出入口は `estimator.py`(単一ファイル、flopscope のみ)。旧 `candidates/k3_factored.py` から移動し、研究と梱包を同じ実装へ統一した。
 
-現行既定は、共分散方向を使う4次閉包と正値な周辺密度を組み合わせた版。
-固定候補を未使用4個のMLPで比較して採用した。推論入力のMCサンプリングは行わない。
-今回の評価・安全検査・採否は「方向依存κ4の再生とヒューリスティック探索」に記録する。
+方向依存κ4と正値周辺密度の既存実装を基準に、数式を増やさず計算削減を進める。
+前回の少数MLPによるローカル改善だけで本番採用・提出スコアの見積もりをした判断は撤回する。本番改善は未確認。
+以下の過去の実験記録に現れる `candidates/k3_factored.py` は旧配置名。過去の測定値・固定hashは書き換えない。
 
 ```bash
-uv run whest run --estimator candidates/k3_factored.py \
+uv run whest run --estimator estimator.py \
     --dataset hf://aicrowd/arc-whestbench-public-2026@v2-phase2 --split mini --runner subprocess
-uv run whest package --estimator candidates/k3_factored.py --output submission.tar.gz
+uv run whest package --estimator estimator.py --output submission.tar.gz
 ```
 
 ## 従来ラウンドの結果(mini、N=1e9 の正解)
@@ -399,7 +399,7 @@ GPU 研究環境は `research/gpu_env.sh`(提出用とは別の Python 3.12 環�
 | `research/k3_dense.py` | 密テンソル版(n=128〜256 用)。論文の diagram summation formula(Theorem A.2)を τ 1次まで実装。アブレーション用スイッチ付き |
 | `research/check_k3_dense.py`, `ablate_k3.py` | MC との照合、項ごとのアブレーション |
 | `research/mc_cumulants.py`, `oracle_k4.py`, `oracle_k4b.py`, `k4_birth.py` | κ4 を MC で測って密版に注入する実験(計画2 を含む) |
-| `candidates/k3_factored.py` | 家族版(提出用) |
+| `estimator.py` | 家族版(標準提出入口。旧 `candidates/k3_factored.py`) |
 | `research/archive/k3_factored_v1.py` | 旧版(計画0〜4 と探索スクリプトの再現用) |
 | `research/check_factored.py`, `check_factored_iik.py` | 旧版と密版の一致確認(最大差 8e-7、iik あり 7e-7) |
 | `research/gpu_env.sh`, `gpu_reference.py`, `gpu_ref_internals.py`, `gpu_mc_stats.py` | GPU での参照実装・MC 真値 |
