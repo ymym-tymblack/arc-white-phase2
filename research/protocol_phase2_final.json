@@ -1,0 +1,45 @@
+{
+  "created_utc": "2026-10-17T15:30:00Z",
+  "purpose": "締切前の最終候補を、結果を見る前に固定した条件で一度だけ比較して採否を決める。",
+  "datasets": {
+    "development": {
+      "path": "/kaggle/ext/full_dev64",
+      "official_full_rows": "64-127",
+      "metadata_sha256": "7e150420a9a2487de8c282999ff247910cfcae5659fd509c7bf91938709436f7",
+      "use": "候補の選択・係数の当てはめ・事前比較に使ってよい"
+    },
+    "final": {
+      "path": "/kaggle/ext/full_final128",
+      "official_full_rows": "128-255",
+      "metadata_sha256": "eeba1ebf274fbd78770d8fdf2190a5b9f4faafc7acd095e32690ddd78e171f18",
+      "use": "凍結した候補ごとに一度だけ評価する。結果を見た後の再調整・再選択はしない"
+    },
+    "training_allowed": "mini0-99, 公式full0-63, 公式full256以降(学習・当てはめ用)。final行は学習に使わない"
+  },
+  "baseline": {
+    "description": "Strassen導入前の採用版(commit 22e1dc1 の estimator.py)",
+    "sha256": "e681975f4d9024e85097f671b9a6020b02663b08a77d482b55e7de528041c88e"
+  },
+  "candidates": {
+    "exact_compute": "数式不変の計算削減(Strassen・演算回数削減)だけの版。凍結時にsha256を記録する",
+    "combined": "exact_computeに開発集合で選んだ精度改善・学習補正を加えた版(最大1つ)。凍結時にsha256を記録する"
+  },
+  "metric": "ネットワークごとの調整後スコア = 最終層MSE × max(0.1, FLOP/2^41)。ネットワーク単位で対にして比べる",
+  "adoption_rules": {
+    "exact_compute": [
+      "final128の最終層MSEの平均比(候補/基準)が0.995以上1.005以下",
+      "推定失敗(例外・予算超過・非有限)が0件",
+      "平均C/Bが基準より小さい",
+      "静かな環境の1スレッド事前検査で、幅1024・深さ16のresidualが0.35秒以下、7形状すべて完走、最大RSSが6GiB以下"
+    ],
+    "combined": [
+      "開発64網で、exact_computeに対する最終層MSEの対の平均比が0.98以下、かつネットワーク単位ブートストラップ95%区間の上端が1未満(選択時に確認)",
+      "final128で、exact_computeに対する調整後スコアの対の平均比が1未満、かつ6割以上のネットワークで改善",
+      "推定失敗0件、exact_computeと同じ事前検査の条件を満たす"
+    ]
+  },
+  "notes": [
+    "本番(非公開の新しいMLP)のスコアへの換算予測はしない",
+    "提出(AIcrowdへのアップロード)はユーザーの了承を得てから行う"
+  ]
+}
