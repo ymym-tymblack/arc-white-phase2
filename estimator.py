@@ -306,6 +306,174 @@ def _old_basis(candidate, energy, minimum):
     return basis, rotation
 
 
+class _Strassen:
+    """幅優先・一括の Strassen–Winograd 積(自作。Winograd 1971 の 7 乗算・15 加減算形)。
+
+    (m,k)@(k,p) を各段で 2×2 ブロックに分け、8 回の加減算で 7 組の因子をバッチ軸に並べる。
+    L 段後の 7^L 個の小さな積を 1 回の batched matmul で計算し、戻りで 7 回の加減算により
+    結果ブロックを組み立てる。乗算は (7/8)^L 倍、演算の回数は段数に比例し行列の大きさに
+    依らない。flopscope は全演算を形状から課金する(実際に行う算術が減る。数え方の変更ではない)。
+
+    作業バッファは全ての積で共有する 1 本の領域(arena)から形状ごとの view として切り出し、
+    予測をまたいで再利用する。積は順に 1 つずつ実行され、作業内容は呼び出しの中だけで使うので
+    共有してよい(必要量は全積の最大値)。大きな一時配列の確保・解放が residual 時間の主因なので、
+    それを避けるための保持である。view を作る reshape は形状ごとに最初の 1 回だけ課金される。
+    """
+
+    def __init__(self):
+        self._arena = None
+        self._store = {}
+        self._programs = {}
+
+    def reserve(self, m, k, p, levels):
+        """この形の積に必要な作業量を arena に確保する(足りなければ取り直す)。"""
+        need = self.need(m, k, p, levels)
+        if self._arena is None or self._arena.shape[0] < need:
+            self._arena = fnp.empty(need, dtype=fnp.float32)
+            self._programs = {}
+
+    @staticmethod
+    def _shapes(m, k, p, levels):
+        """各段の作業バッファの形状。m == k なら戻りの出力は同じ形の B 段バッファを再利用する。"""
+        out = []
+        batch = 1
+        square = m == k
+        for lev in range(levels):
+            m, k, p = m // 2, k // 2, p // 2
+            out.append((("A", lev), (7 * batch, m, k)))
+            out.append((("B", lev), (7 * batch, k, p)))
+            if lev and not square:
+                out.append((("C", lev), (batch, 2 * m, 2 * p)))
+            batch *= 7
+        out.append((("M",), (batch, m, p)))
+        return out
+
+    @classmethod
+    def need(cls, m, k, p, levels):
+        """この形の積の作業量(要素数)。"""
+        return sum(a * b * c for _, (a, b, c) in cls._shapes(m, k, p, levels))
+
+    @staticmethod
+    def depth(m, k, p, levels, leaf=8):
+        while levels > 0 and (
+            m % (1 << levels) or k % (1 << levels) or p % (1 << levels)
+            or min(m, k, p) >> levels < leaf
+        ):
+            levels -= 1
+        return levels
+
+    def _program(self, m, k, p, levels):
+        sig = (m, k, p, levels)
+        program = self._programs.get(sig)
+        if program is not None:
+            return program
+        self.reserve(m, k, p, levels)
+        bufs = {}
+        offset = 0
+        for name, shape in self._shapes(m, k, p, levels):
+            size = shape[0] * shape[1] * shape[2]
+            bufs[name] = fnp.reshape(self._arena[offset:offset + size], shape)
+            offset += size
+        downs = []
+        batch = 1
+        for lev in range(levels):
+            A, B = bufs[("A", lev)], bufs[("B", lev)]
+            pick = (lambda X, t: X[t]) if batch == 1 else (
+                lambda X, t, b=batch: X[t * b:(t + 1) * b])
+            step = dict(sa=[pick(A, t) for t in range(7)], sb=[pick(B, t) for t in range(7)])
+            if lev:
+                pA, pB = bufs[("A", lev - 1)], bufs[("B", lev - 1)]
+                h, hk, hp = A.shape[1], A.shape[2], B.shape[2]
+                step["qa"] = (pA[:, :h, :hk], pA[:, :h, hk:], pA[:, h:, :hk], pA[:, h:, hk:])
+                step["qb"] = (pB[:, :hk, :hp], pB[:, :hk, hp:], pB[:, hk:, :hp], pB[:, hk:, hp:])
+            downs.append(step)
+            batch *= 7
+        ups = []
+        product = bufs[("M",)]
+        for lev in range(levels - 1, -1, -1):
+            batch //= 7
+            pick = (lambda X, t: X[t]) if batch == 1 else (
+                lambda X, t, b=batch: X[t * b:(t + 1) * b])
+            h, hp = product.shape[1], product.shape[2]
+            step = dict(s=[pick(product, t) for t in range(7)], h=h, hp=hp)
+            if lev:
+                # m == k の積では、使い終えた一段上の B バッファが同じ形なので出力に使う
+                C = bufs[("B", lev - 1)] if m == k else bufs[("C", lev)]
+                step["quads"] = (C[:, :h, :hp], C[:, :h, hp:], C[:, h:, :hp], C[:, h:, hp:])
+                product = C
+            ups.append(step)
+        program = dict(downs=downs, ups=ups, leaf=(bufs[("A", levels - 1)],
+                                                   bufs[("B", levels - 1)], bufs[("M",)]))
+        self._programs[sig] = program
+        return program
+
+    def workspace(self, name, rows, cols):
+        """予測をまたいで保持する 2 次元作業領域の (rows, cols) view(必要なら拡張する)。"""
+        store = self._store.get(("ws", name))
+        if store is None or store.shape[0] < rows or store.shape[1] < cols:
+            if store is not None:
+                rows_cap, cols_cap = max(rows, store.shape[0]), max(cols, store.shape[1])
+            else:
+                rows_cap, cols_cap = rows, cols
+            store = fnp.empty((rows_cap, cols_cap), dtype=fnp.float32)
+            self._store[("ws", name)] = store
+        return store[:rows, :cols]
+
+    # これより小さい積は通常の matmul にする。Strassen 1 回は約 20 段×4 の演算(各 ~30µs の
+    # residual 時間)を足すので、節約が小さい積では residual の上限に対して割に合わない。
+    min_flops = 4.0e9
+
+    def matmul(self, a, b, levels, out):
+        """out[...] = a @ b(out は (m,p) の view でよい)。段数は割り切れる範囲に下げる。"""
+        m, k = a.shape
+        p = b.shape[1]
+        levels = self.depth(m, k, p, levels) if 2.0 * m * k * p >= self.min_flops else 0
+        if levels == 0:
+            return fnp.matmul(a, b, out=out)
+        program = self._program(m, k, p, levels)
+        h, hk, hp = m // 2, k // 2, p // 2
+        qa = (a[:h, :hk], a[:h, hk:], a[h:, :hk], a[h:, hk:])
+        qb = (b[:hk, :hp], b[:hk, hp:], b[hk:, :hp], b[hk:, hp:])
+        for lev, step in enumerate(program["downs"]):
+            if lev:
+                qa, qb = step["qa"], step["qb"]
+            a11, a12, a21, a22 = qa
+            b11, b12, b21, b22 = qb
+            sa, sb = step["sa"], step["sb"]
+            # 因子の並び: (a11,b11) (a12,b21) (S4,b22) (a22,T4) (S1,T1) (S2,T2) (S3,T3)
+            fnp.copyto(sa[0], a11)
+            fnp.copyto(sa[1], a12)
+            fnp.copyto(sa[3], a22)
+            fnp.add(a21, a22, out=sa[4])  # S1
+            fnp.subtract(sa[4], a11, out=sa[5])  # S2
+            fnp.subtract(a11, a21, out=sa[6])  # S3
+            fnp.subtract(a12, sa[5], out=sa[2])  # S4
+            fnp.copyto(sb[0], b11)
+            fnp.copyto(sb[1], b21)
+            fnp.copyto(sb[2], b22)
+            fnp.subtract(b12, b11, out=sb[4])  # T1
+            fnp.subtract(b22, sb[4], out=sb[5])  # T2
+            fnp.subtract(b22, b12, out=sb[6])  # T3
+            fnp.subtract(sb[5], b21, out=sb[3])  # T4
+        left, right, product = program["leaf"]
+        fnp.matmul(left, right, out=product)
+        for step in program["ups"]:
+            s = step["s"]
+            if "quads" in step:
+                c11, c12, c21, c22 = step["quads"]
+            else:
+                h, hp = step["h"], step["hp"]
+                c11, c12, c21, c22 = out[:h, :hp], out[:h, hp:], out[h:, :hp], out[h:, hp:]
+            fnp.add(s[0], s[5], out=s[5])  # U2 = P1 + P6
+            fnp.add(s[5], s[6], out=s[6])  # U3 = U2 + P7
+            fnp.subtract(s[6], s[3], out=c21)  # C21 = U3 - P4
+            fnp.add(s[6], s[4], out=c22)  # C22 = U3 + P5
+            fnp.add(s[5], s[4], out=s[4])  # U4 = U2 + P5
+            fnp.add(s[4], s[2], out=c12)  # C12 = U4 + P3
+            fnp.add(s[0], s[1], out=c11)  # C11 = P1 + P2
+        return out
+
+
 class Estimator(BaseEstimator):
     kmax = 3  # Mehler 展開の次数(共分散)
     window = 16  # 家族を何層分持つか(古い家族を捨てて FLOP を減らす)
@@ -346,6 +514,9 @@ class Estimator(BaseEstimator):
     # 旧放射モードの検証28MLP: なし1.382e-8 → 階数16で1.313e-8(MSE3.5e-8→3.1e-8)。
     k3leg = True
     k3leg_rank = 4
+    # 若い家族の輸送と D21 読み出しの大きな積を Strassen–Winograd で計算する段数(0 なら通常の積)。
+    strassen_levels = 4
+    strassen_levels_old = 4  # 共有基底の古い家族の復元と Racc の積の段数
 
     def __init__(self, **kwargs) -> None:
         self._setup_rng = None
@@ -354,6 +525,7 @@ class Estimator(BaseEstimator):
                 raise TypeError(f"unknown option {key}")
             setattr(self, key, value)
         self.features = []
+        self._strassen = _Strassen()  # 作業バッファは予測をまたいで保持する
 
     def setup(self, ctx: SetupContext) -> None:
         self._setup_rng = fnp.random.default_rng(ctx.seed)
@@ -399,6 +571,46 @@ class Estimator(BaseEstimator):
         U = FA_o = FM_o = FZ_o = c2_o = e_o = dd_o = Q_o = None
         r_old = None if self.rank_old is None else min(self.rank_old, n)
         old_min = 0 if r_old is None else min(r_old, max(1, self.rank_old_min))
+        # Strassen 段数と作業領域(最大形状で一度だけ確保し、予測をまたいで使い回す)。
+        # 輸送時の若い家族は age_old 以下(共有基底へ移すため)、そうでなければ窓まで。
+        # 古い家族は最大で depth - 1 - age_old 個(最後の層では誕生しない)。
+        young_cap = window if self.age_old is None or r_old is None else min(window, self.age_old)
+        old_cap = 0 if r_old is None or self.age_old is None or window <= self.age_old else max(
+            0, depth - 1 - self.age_old)
+        ru_cap = r_old if old_cap else 0
+        sw = self._strassen
+        # 輸送 W^T [Φ∘U | Φ∘A | c1∘ρ | Φ∘M] と読み出し [XA | XM] [A | M]^T
+        products = [(n, n, ru_cap + (2 * young_cap + 1) * n)]
+        if young_cap:
+            products.append((n, 2 * young_cap * n, n))
+        # 古い家族の復元 U [FA_o | FM_o] と Racc = [XAo | XMo] [FA_o | FM_o]^T
+        old_products = [(n, r_old, 2 * old_cap * n), (n, 2 * old_cap * n, r_old)] if old_cap else []
+        levels = self.strassen_levels if window > 0 else 0
+        levels_old = self.strassen_levels_old if old_products else 0
+
+        def _fits(group, lev):
+            # 共有作業領域が 3GB を超える設定(研究用の大きな窓など)では段数を下げる
+            return 4 * max(_Strassen.need(m_, k_, p_, _Strassen.depth(m_, k_, p_, lev))
+                           for m_, k_, p_ in group) <= 3.0e9
+
+        while levels and not _fits(products, levels):
+            levels -= 1
+        while levels_old and not _fits(old_products, levels_old):
+            levels_old -= 1
+        for group, lev in ((products, levels), (old_products, levels_old)):
+            if lev:
+                for m_, k_, p_ in group:
+                    sw.reserve(m_, k_, p_, _Strassen.depth(m_, k_, p_, lev))
+        if window > 0:
+            sw.workspace("transport_in", n, ru_cap + (2 * young_cap + 1) * n)
+            sw.workspace("legs", n, ru_cap + (2 * young_cap + 2) * n)
+            if young_cap:
+                sw.workspace("readout_left", n, 2 * young_cap * n)
+                sw.workspace("readout_right", n, 2 * young_cap * n)
+        if old_cap:
+            sw.workspace("old_factors", r_old, 2 * old_cap * n)
+            sw.workspace("old_legs", n, 2 * old_cap * n)
+            sw.workspace("old_left", n, 2 * old_cap * n)
         prune = self.family_prune_rel > 0.0
         birth_w = fnp.empty(0, dtype=fnp.int64) if prune else None
         rows = []
@@ -412,7 +624,7 @@ class Estimator(BaseEstimator):
                 if last:
                     raw_pre_var = fnp.sum(w * w, axis=0)
                 else:
-                    S = fnp.matmul(w.T, w)
+                    S = fnp.einsum("ia,ib->ab", w, w)  # 対称な Gram は上三角分だけ課金される
                     raw_pre_var = fnp.diag(S)
             elif last:
                 raw_pre_var = fnp.sum(w * fnp.matmul(C, w), axis=0)
@@ -484,25 +696,34 @@ class Estimator(BaseEstimator):
                     if prune:
                         score_w = score_w + fnp.sum(fnp.abs(kd * uu), axis=0)
                 if not last:
-                    XM = AA * c2_w[None, :]
-                    XA = 2.0 * (A_w * M_w) * c2_w[None, :]
+                    # D21 = XA A^T + XM M^T を [XA | XM] [A | M]^T の 1 回の積にまとめる。
+                    # 左右とも予測をまたいで保持する作業領域へ直接書き、大きな一時配列を作らない。
+                    cols = nf * n
+                    left = sw.workspace("readout_left", n, 2 * cols)
+                    XA, XM = left[:, :cols], left[:, cols:]
+                    fnp.multiply(AA, c2_w[None, :], out=XM)
+                    fnp.multiply(2.0 * (A_w * M_w), c2_w[None, :], out=XA)
                     if e_w is not None:
-                        XM = XM + MM * dd_w[None, :] + 2.0 * (M_w * PD)
-                        XA = XA + MM * e_w[None, :]
+                        fnp.add(XM, MM * dd_w[None, :] + 2.0 * (M_w * PD), out=XM)
+                        fnp.add(XA, MM * e_w[None, :], out=XA)
                     if X3_w is not None:
-                        XM = XM + 2.0 * (X3_w * A_w)
-                        XA = XA + 2.0 * (X3_w * M_w)
+                        fnp.add(XM, 2.0 * (X3_w * A_w), out=XM)
+                        fnp.add(XA, 2.0 * (X3_w * M_w), out=XA)
                     if g_w is not None:
                         # X の転置側も A/M の既存 2 積へ折り込み、家族ごとの n³ 積を増やさない。
                         fold_m = A_w * g_w[None, :] - 2.0 * M_w * (c1_w * g_w)[None, :]
-                        XM = XM + fnp.reshape(
+                        fnp.add(XM, fnp.reshape(
                             2.0 * uu[:, :, None] * fnp.reshape(fold_m, (n, nf, n)), (n, nf * n)
-                        )
-                        XA = XA + fnp.reshape(
+                        ), out=XM)
+                        fnp.add(XA, fnp.reshape(
                             2.0 * uu[:, :, None] * fnp.reshape(M_w * g_w[None, :], (n, nf, n)),
                             (n, nf * n),
-                        )
-                    D21 = fnp.matmul(XM, M_w.T) + fnp.matmul(XA, A_w.T)
+                        ), out=XA)
+                    right = sw.workspace("readout_right", n, 2 * cols)
+                    fnp.copyto(right[:, :cols], A_w)
+                    fnp.copyto(right[:, cols:], M_w)
+                    D21 = fnp.empty((n, n), dtype=f32)
+                    sw.matmul(left, right.T, levels, out=D21)
                     if g_w is not None:
                         D21 = D21 + fnp.matmul(kd, uu.T)
                     if X3_w is not None:
@@ -514,8 +735,15 @@ class Estimator(BaseEstimator):
             if U is not None:
                 # 基本脚だけを復元。残差・κ3脚の転置読み出しは細い因子へ畳み込む。
                 ko = c2_o.shape[0] // n
-                Ao = fnp.matmul(U, FA_o)
-                Mo = fnp.matmul(U, FM_o)
+                # [A_o | M_o] = U [FA_o | FM_o] を 1 回の積で復元する。因子は読み出しの
+                # Racc でも転置側として使うので、同じ作業領域に並べたまま残す。
+                cols_o = ko * n
+                factors = sw.workspace("old_factors", U.shape[1], 2 * cols_o)
+                fnp.copyto(factors[:, :cols_o], FA_o)
+                fnp.copyto(factors[:, cols_o:], FM_o)
+                old_legs = sw.workspace("old_legs", n, 2 * cols_o)
+                sw.matmul(U, factors, levels_old, out=old_legs)
+                Ao, Mo = old_legs[:, :cols_o], old_legs[:, cols_o:]
                 AAo = Ao * Ao
                 d3o = AAo * Mo * c2_o[None, :]
                 Po = MMo = None
@@ -551,26 +779,30 @@ class Estimator(BaseEstimator):
                     if prune:
                         score_o = score_o + fnp.sum(fnp.abs(kdo * uo), axis=0)
                 if not last:
-                    XMo = AAo * c2_o[None, :]
-                    XAo = 2.0 * (Ao * Mo) * c2_o[None, :]
+                    # Racc = XMo FM_o^T + XAo FA_o^T も [XAo | XMo] [FA_o | FM_o]^T の 1 回の積。
+                    left_o = sw.workspace("old_left", n, 2 * cols_o)
+                    XAo, XMo = left_o[:, :cols_o], left_o[:, cols_o:]
+                    fnp.multiply(AAo, c2_o[None, :], out=XMo)
+                    fnp.multiply(2.0 * (Ao * Mo), c2_o[None, :], out=XAo)
                     if Po is not None:
-                        XMo = XMo + 2.0 * Mo * Po + MMo * dd_o[None, :]
-                        XAo = XAo + MMo * e_o[None, :]
+                        fnp.add(XMo, 2.0 * Mo * Po + MMo * dd_o[None, :], out=XMo)
+                        fnp.add(XAo, MMo * e_o[None, :], out=XAo)
                     if X3o is not None:
-                        XMo = XMo + 2.0 * (X3o * Ao)
-                        XAo = XAo + 2.0 * (X3o * Mo)
+                        fnp.add(XMo, 2.0 * (X3o * Ao), out=XMo)
+                        fnp.add(XAo, 2.0 * (X3o * Mo), out=XAo)
                     if g_o is not None:
                         fold_m = Ao * g_o[None, :] - 2.0 * Mo * (c1_o * g_o)[None, :]
-                        XMo = XMo + fnp.reshape(
+                        fnp.add(XMo, fnp.reshape(
                             2.0 * uo[:, :, None] * fnp.reshape(fold_m, (n, ko, n)), (n, ko * n)
-                        )
-                        XAo = XAo + fnp.reshape(
+                        ), out=XMo)
+                        fnp.add(XAo, fnp.reshape(
                             2.0 * uo[:, :, None] * fnp.reshape(Mo * g_o[None, :], (n, ko, n)),
                             (n, ko * n),
-                        )
+                        ), out=XAo)
                         thin = fnp.matmul(kdo, uo.T)
                         D21 = thin if D21 is None else D21 + thin
-                    Racc = fnp.matmul(XMo, FM_o.T) + fnp.matmul(XAo, FA_o.T)
+                    Racc = fnp.empty((n, U.shape[1]), dtype=f32)
+                    sw.matmul(left_o, factors.T, levels_old, out=Racc)
                     if FZ_o is not None:
                         Y = fnp.einsum("nkm,kmr->nkr", fnp.reshape(MMo, (n, ko, n)), Q_o)
                         Racc = Racc + fnp.matmul(fnp.reshape(Y, (n, ko * rank)), FZ_o.T)
@@ -766,7 +998,6 @@ class Estimator(BaseEstimator):
             # 輸送: Φ_i² Φ_k T_iik)との差を Δ として、新しい家族に入れる。
             w_next = mlp.weights[layer + 1]
             wT = w_next.T
-            A_new = fnp.matmul(wT, c[1][:, None] * rho)
             B3 = X3q_new = R3_new = None
             if k3leg:
                 if t_iij is not None:
@@ -863,15 +1094,37 @@ class Estimator(BaseEstimator):
                 nf -= 1
                 if prune:
                     birth_w = birth_w[1:]
-            if U is not None:
-                U = fnp.matmul(wT, Phi[:, None] * U)
             if nf > 0:
-                A_w = fnp.matmul(wT, Phi[:, None] * A_w)
                 if X3q_w is not None:
                     X3q_w = fnp.matmul(wT, Phi[:, None] * X3q_w)
-                M_w = fnp.matmul(wT, Phi[:, None] * M_w)
                 if Z_w is not None:
                     Z_w = fnp.matmul(wT, Phi[:, None] * Z_w)
+            # 共有基底 U、若い家族の A/M 脚、新生の A 脚 W^T(c1∘ρ) を 1 回の積で運ぶ。右の因子を
+            # [Φ∘U | Φ∘A | c1∘ρ | Φ∘M] と並べると結果は [U | A | A_new | M] になり、続けて
+            # 新生の M 脚 W^T を写せば A 脚・M 脚がそれぞれ連続した view になる(連結が要らない)。
+            # 結果の領域は予測をまたいで使い回す。前層の脚は右の因子へ写してから上書きする。
+            ru = 0 if U is None else U.shape[1]
+            cols = nf * n
+            born = n if window > 0 else 0
+            if ru + cols + born:
+                width = ru + 2 * cols + born
+                right = sw.workspace("transport_in", n, width)
+                if ru:
+                    fnp.multiply(Phi[:, None], U, out=right[:, :ru])
+                if cols:
+                    fnp.multiply(Phi[:, None], A_w, out=right[:, ru:ru + cols])
+                    fnp.multiply(Phi[:, None], M_w, out=right[:, ru + cols + born:width])
+                if born:
+                    fnp.multiply(c[1][:, None], rho, out=right[:, ru + cols:ru + cols + born])
+                legs = sw.workspace("legs", n, width + born)
+                sw.matmul(wT, right, levels, out=legs[:, :width])
+                if born:
+                    fnp.copyto(legs[:, width:], wT)
+                if ru:
+                    U = legs[:, :ru]
+                if cols + born:
+                    A_w = legs[:, ru:ru + cols + born]
+                    M_w = legs[:, ru + cols + born:width + born]
             if window > 0:
                 if g_new is not None:
                     if nf == 0 or g_w is None:
@@ -884,18 +1137,16 @@ class Estimator(BaseEstimator):
                         if regen:
                             u_w = fnp.concatenate([u_w, u_new])
                 if nf == 0:
-                    A_w, M_w, c2_w = A_new, fnp.asarray(wT, dtype=f32), c[2]
+                    c2_w = c[2]
                     X3q_w = X3q_new
                     R3_s = None if R3_new is None else fnp.reshape(R3_new, (1, r3, n))
                     e_w, dd_w = e_new, dd_new
                     Z_w = Z_new
                     Q_s = None if Q_new is None else fnp.reshape(Q_new, (1, n, rank))
                 else:
-                    A_w = fnp.concatenate([A_w, A_new], axis=1)
                     if X3q_new is not None:
                         X3q_w = fnp.concatenate([X3q_w, X3q_new], axis=1)
                         R3_s = fnp.concatenate([R3_s, fnp.reshape(R3_new, (1, r3, n))], axis=0)
-                    M_w = fnp.concatenate([M_w, wT], axis=1)
                     c2_w = fnp.concatenate([c2_w, c[2]])
                     if e_new is not None:
                         e_w = fnp.concatenate([e_w, e_new])
