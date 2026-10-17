@@ -577,6 +577,14 @@ class Estimator(BaseEstimator):
     # 旧放射モードの検証28MLP: なし1.382e-8 → 階数16で1.313e-8(MSE3.5e-8→3.1e-8)。
     k3leg = True
     k3leg_rank = 4
+    # 球面入力の厳密な動径分解(バイアスなし ReLU は 1 次正斉次)。x=r·u、r~χ_n と u は独立なので
+    # E[h(x)] = c_n E[h(√n u)]、c_n = E[χ_n]/√n。√n u は平均0・共分散I・κ3=0 で
+    # κ4 = (1/6)Sym6(G⊗I)、G = g I、g = -6/(n+2)。層0のκ4コアを g で始め、最後に全行へ c_n を掛ける。
+    sphere_input = True
+    # (3,1) 切り口の第2項(フォーラム投稿 18246、kai_leal_gonzalez 氏の二項則
+    # κ(z_i,z_i,z_i,z_j) ≈ b1 v_i Σ_ij + b2 κ3_i T_iij / v_i)。標準化単位では b2·tdiag_i·t_iij。
+    # 導出値は b2=1。既定値は公式 full 0〜15 番(burned)で 2.5〜4.0 を走査して選んだ。0 なら無効。
+    k31_two_term = 3.0
     # 若い家族の輸送と D21 読み出しの大きな積を Strassen–Winograd で計算する段数(0 なら通常の積)。
     strassen_levels = 4
     strassen_levels_old = 4  # 共有基底の古い家族の復元と Racc の積の段数
@@ -688,7 +696,11 @@ class Estimator(BaseEstimator):
 
         mu = fnp.zeros(n, dtype=f32)
         C = None  # 最初の入力共分散 I は密に作らず WᵀW として縮約する
-        core_diag = fnp.zeros(n, dtype=f32) if regen else None
+        sphere = regen and self.sphere_input
+        sphere_g = -6.0 / (n + 2.0)
+        core_diag = None
+        if regen:
+            core_diag = fnp.full(n, sphere_g if sphere else 0.0, dtype=f32)
         var_prev = fnp.ones(n, dtype=f32) if regen else None
         # 家族は「横並び」の行列で持つ: 家族 f の脚が列ブロック [f n, (f+1) n) を占める。
         # こうすると、輸送も読み出しも家族の数によらず 1 回の演算で済む(Python 側の時間を抑える)。
@@ -754,6 +766,9 @@ class Estimator(BaseEstimator):
                 if not float(denominator) > 0.0:
                     raise ValueError("directional_k4 regeneration denominator must be positive")
                 lam = strength * fnp.mean(tg) / denominator
+                if sphere and layer == 0:
+                    # 層0は WᵀGW = g S、t_v = 0 なので λ_0 = g。
+                    lam = sphere_g
                 dG = tg + lam * tv
 
             # --- 3 次キュムラントの読み出し(D3 = T_aaa, D21 = T_aab) ---
@@ -979,7 +994,7 @@ class Estimator(BaseEstimator):
             raw_mu = raw_ez2 = raw_ez3 = raw_ez4 = raw_var = None
             if regen:
                 raw_powers = _positive_relu_powers(
-                    m, var, sigma, tdiag, None if layer == 0 else omega, 2 if last else 4
+                    m, var, sigma, tdiag, None if layer == 0 and not sphere else omega, 2 if last else 4
                 )
                 raw_mu, raw_ez2 = raw_powers[:2]
                 mu_new = raw_mu.astype(f32)
@@ -1037,14 +1052,19 @@ class Estimator(BaseEstimator):
                 rp = rp * rho
                 R.append(rp / float(math.factorial(k)))
             k4 = k31 = None
-            if regen and layer > 0:
+            if regen and (layer > 0 or sphere):
                 dv, gv = metric / var, dG / var
                 k22 = (fnp.outer(dv, gv) + fnp.outer(gv, dv)) / 6.0
                 fnp.fill_diagonal(k22, 0.0)
                 k4 = (omega, k22)
-                if self.regen_use31 != 0.0 and strength != 0.0:
+                if self.regen_use31 != 0.0 and (strength != 0.0 or (sphere and layer == 0)):
                     k31 = (self.regen_use31 * 0.5 * lam) * dv[:, None] * rho
                     fnp.fill_diagonal(k31, 0.0)
+                if self.k31_two_term != 0.0 and t_iij is not None:
+                    # 投稿 18246(kai_leal_gonzalez)の第2項 b2 κ3_i T_iij / v_i を標準化単位で加える。
+                    k2 = (self.k31_two_term * tdiag)[:, None] * t_iij
+                    fnp.fill_diagonal(k2, 0.0)
+                    k31 = k2 if k31 is None else k31 + k2
             elif self.use_k4 and not directional:
                 om = omega * fnp.ones_like(sigma)
                 q = fnp.sqrt(om / 3.0)
@@ -1321,6 +1341,10 @@ class Estimator(BaseEstimator):
                     "old_rank_next": 0 if U is None else U.shape[1],
                 })
 
+        if sphere:
+            # E[χ_n]/√n = √2 Γ((n+1)/2) / (Γ(n/2) √n)
+            c_n = math.sqrt(2.0 / n) * math.exp(math.lgamma((n + 1) / 2.0) - math.lgamma(n / 2.0))
+            rows = [row * c_n for row in rows]
         if self.calib:
             rows[-1] = rows[-1] * (1.0 - self.calib)
         return fnp.stack(rows, axis=0)
