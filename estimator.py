@@ -97,38 +97,86 @@ def _pair_terms(cA, cB, R, kmax, t_iij, t_ijj, tdiag, k4, k31=None):
     κ4 放射ブロック 1 個: cA_{2+e} cB_{2+e} q_i q_j ρ^e/(4 e!) + (cA_{4+e} ω_i cB_e + 対称) ρ^e/(24 e!)
     任意の k31[i,j]=κ̃_iiij は (cA[e+3] cB[e+1] k31 + 転置側) ρ^e/(6 e!) を加える。
     """
-    # 旧1次元呼び出しは outer の演算・課金順をそのまま維持する。
-    outer = fnp.outer if cA[1].ndim == cB[1].ndim == 1 else (
-        lambda a, b: a[..., :, None] * b[..., None, :]
-    )
-    out = fnp.multiply(outer(cA[1], cB[1]), R[1])
+    out = fnp.multiply(fnp.outer(cA[1], cB[1]), R[1])
     for k in range(2, kmax + 1):
-        out = out + fnp.multiply(outer(cA[k], cB[k]), R[k])
+        out = out + fnp.multiply(fnp.outer(cA[k], cB[k]), R[k])
     if t_iij is not None:
         for k in range(2, kmax + 1):
             Rk2 = R[0] if k == 2 else R[k - 2]
             out = out + fnp.multiply(
-                outer(cA[k], cB[k - 1]) * t_iij + outer(cA[k - 1], cB[k]) * t_ijj, Rk2
+                fnp.outer(cA[k], cB[k - 1]) * t_iij + fnp.outer(cA[k - 1], cB[k]) * t_ijj, Rk2
             ) * 0.5
     if tdiag is not None:
         for k in range(1, kmax + 1):
-            out = out + (outer(cA[k + 3] * tdiag, cB[k]) + outer(cA[k], cB[k + 3] * tdiag)) * (
-                R[k] / 6.0
-            )
+            out = out + (fnp.outer(cA[k + 3] * tdiag, cB[k])
+                         + fnp.outer(cA[k], cB[k + 3] * tdiag)) * (R[k] / 6.0)
     if k4 is not None:
         om, k22 = k4
-        out = out + fnp.multiply(outer(cA[2], cB[2]), k22) * 0.25
+        out = out + fnp.multiply(fnp.outer(cA[2], cB[2]), k22) * 0.25
         for e in range(1, kmax + 1):
-            out = out + fnp.multiply(outer(cA[2 + e], cB[2 + e]), k22 * R[e]) * 0.25
-            out = out + (outer(cA[4 + e] * om, cB[e]) + outer(cA[e], cB[4 + e] * om)) * (
+            out = out + fnp.multiply(fnp.outer(cA[2 + e], cB[2 + e]), k22 * R[e]) * 0.25
+            out = out + (fnp.outer(cA[4 + e] * om, cB[e]) + fnp.outer(cA[e], cB[4 + e] * om)) * (
                 R[e] / 24.0
             )
     if k31 is not None:
         for e in range(kmax + 1):
             out = out + (
-                outer(cA[e + 3], cB[e + 1]) * k31
-                + outer(cA[e + 1], cB[e + 3]) * k31.T
+                fnp.outer(cA[e + 3], cB[e + 1]) * k31
+                + fnp.outer(cA[e + 1], cB[e + 3]) * k31.T
             ) * (R[e] / 6.0)
+    return out
+
+
+def _pair_terms_batched(cA, cB, R, kmax, t_iij, t_ijj, tdiag, k4, k31=None):
+    """_pair_terms と同じ和を、出力関数の組 s をまとめた (K, s, n) の係数で計算する。
+
+    和の各項は (u ⊗ v) ∘ G の形で、G は R_e(=ρ^e/e!)と乗数 M ∈ {1, τ_iij, τ_ijj, k22,
+    k31, k31ᵀ} の積なので、M ごとに P_M = Σ_e (U_e ⊗ V_e) ∘ R_e を einsum 1 回で作り、
+    最後に Σ_M M ∘ P_M を足す。項の算術は同じで演算の回数が約 1/4、大きな一時配列も減る。
+    乗数 1 の群は R_e ごとに (A_e + A'_e) ⊗ B_e + A_e ⊗ B'_e(階数 2)にまとめる。
+    """
+    A, B = cA, cB
+    extra_a = extra_b = None
+    if tdiag is not None:
+        extra_a = A[4:kmax + 4] * (tdiag / 6.0)
+        extra_b = B[4:kmax + 4] * (tdiag / 6.0)
+    if k4 is not None:
+        om, k22 = k4
+        add_a = A[5:kmax + 5] * (om / 24.0)
+        add_b = B[5:kmax + 5] * (om / 24.0)
+        extra_a = add_a if extra_a is None else extra_a + add_a
+        extra_b = add_b if extra_b is None else extra_b + add_b
+    Rs = fnp.stack(R[:kmax + 1])  # (kmax+1, n, n)、R[0] = 1
+    base_a = A[1:kmax + 1]
+    if extra_a is None:
+        out = fnp.einsum("esi,esj,eij->sij", base_a, B[1:kmax + 1], Rs[1:])
+    else:
+        U = fnp.stack((base_a + extra_a, base_a), axis=1)  # (e, 階数, s, n)
+        V = fnp.stack((B[1:kmax + 1], extra_b), axis=1)
+        out = fnp.einsum("ersi,ersj,eij->sij", U, V, Rs[1:])
+    mults, parts = [], []
+    if t_iij is not None:
+        # k = 2..kmax: 0.5 A_k ⊗ B_{k-1} ∘ R_{k-2} に τ_iij、0.5 A_{k-1} ⊗ B_k ∘ R_{k-2} に τ_ijj
+        Ut = fnp.stack((A[2:kmax + 1], A[1:kmax]))
+        Vt = fnp.stack((B[1:kmax], B[2:kmax + 1])) * 0.5
+        parts.append(fnp.einsum("mesi,mesj,eij->msij", Ut, Vt, Rs[:kmax - 1]))
+        mults.extend((t_iij, t_ijj))
+    if k4 is not None or k31 is not None:
+        us, vs = [], []
+        if k4 is not None:  # e = 0..kmax: 0.25 A_{2+e} ⊗ B_{2+e} ∘ R_e に k22
+            us.append(A[2:kmax + 3] * 0.25)
+            vs.append(B[2:kmax + 3])
+            mults.append(k22)
+        if k31 is not None:  # A_{e+3} ⊗ B_{e+1} ∘ R_e/6 に k31、転置側に k31ᵀ
+            us.append(A[3:kmax + 4] / 6.0)
+            vs.append(B[1:kmax + 2])
+            us.append(A[1:kmax + 2] / 6.0)
+            vs.append(B[3:kmax + 4])
+            mults.extend((k31, k31.T))
+        parts.append(fnp.einsum("mesi,mesj,eij->msij", fnp.stack(us), fnp.stack(vs), Rs))
+    if parts:
+        P = parts[0] if len(parts) == 1 else fnp.concatenate(parts, axis=0)
+        out = out + fnp.einsum("msij,mij->sij", P, fnp.stack(mults))
     return out
 
 
@@ -386,6 +434,15 @@ class _Strassen:
                 h, hk, hp = A.shape[1], A.shape[2], B.shape[2]
                 step["qa"] = (pA[:, :h, :hk], pA[:, :h, hk:], pA[:, h:, :hk], pA[:, h:, hk:])
                 step["qb"] = (pB[:, :hk, :hp], pB[:, :hk, hp:], pB[:, hk:, :hp], pB[:, hk:, hp:])
+                # (a11, a12) と (b11, b21) は隣り合う 2 枠へ 1 回で写す(演算回数を減らす)
+                step["pair_a"] = (
+                    fnp.reshape(A[:2 * batch], (2, batch, h, hk)),
+                    fnp.transpose(fnp.reshape(pA[:, :h, :], (batch, h, 2, hk)), (2, 0, 1, 3)),
+                )
+                step["pair_b"] = (
+                    fnp.reshape(B[:2 * batch], (2, batch, hk, hp)),
+                    fnp.transpose(fnp.reshape(pB[:, :, :hp], (batch, 2, hk, hp)), (1, 0, 2, 3)),
+                )
             downs.append(step)
             batch *= 7
         ups = []
@@ -441,15 +498,21 @@ class _Strassen:
             b11, b12, b21, b22 = qb
             sa, sb = step["sa"], step["sb"]
             # 因子の並び: (a11,b11) (a12,b21) (S4,b22) (a22,T4) (S1,T1) (S2,T2) (S3,T3)
-            fnp.copyto(sa[0], a11)
-            fnp.copyto(sa[1], a12)
+            if lev:
+                fnp.copyto(*step["pair_a"])  # a11, a12
+            else:
+                fnp.copyto(sa[0], a11)
+                fnp.copyto(sa[1], a12)
             fnp.copyto(sa[3], a22)
             fnp.add(a21, a22, out=sa[4])  # S1
             fnp.subtract(sa[4], a11, out=sa[5])  # S2
             fnp.subtract(a11, a21, out=sa[6])  # S3
             fnp.subtract(a12, sa[5], out=sa[2])  # S4
-            fnp.copyto(sb[0], b11)
-            fnp.copyto(sb[1], b21)
+            if lev:
+                fnp.copyto(*step["pair_b"])  # b11, b21
+            else:
+                fnp.copyto(sb[0], b11)
+                fnp.copyto(sb[1], b21)
             fnp.copyto(sb[2], b22)
             fnp.subtract(b12, b11, out=sb[4])  # T1
             fnp.subtract(b22, sb[4], out=sb[5])  # T2
@@ -871,12 +934,13 @@ class Estimator(BaseEstimator):
             else:
                 omega = self.omega_scale * _omega_g(layer) / n
 
-            # --- Hermite 係数 (p=1) ---
+            # --- Hermite 係数 (p=1) ---  c_k = σφ He_{k-2}(-α)(k ≥ 2)を 1 回の積でまとめて作る
             top = max(kmax + 4, 7)
             he = _hermite_neg_alpha(alpha, top)
-            c = [m * Phi + sigma * phi, sigma * Phi]
-            for k in range(2, top + 1):
-                c.append(sigma * phi * he[k - 2])
+            he_stack = fnp.stack(he[:top - 1])
+            sp = sigma * phi
+            c_tail = sp[None, :] * he_stack
+            c = [m * Phi + sp, sigma * Phi] + [c_tail[k] for k in range(top - 1)]
 
             # --- 平均と E[h²](単一頂点の 3 次・4 次ブロック補正) ---
             e2_0 = (m * m + var) * Phi + m * sigma * phi
@@ -955,12 +1019,14 @@ class Estimator(BaseEstimator):
                 k4 = (om, fnp.outer(q, q))
             c2p = cov21 = None
             if regen:
-                c2p = [e2_0, 2.0 * sigma * c[0], 2.0 * var * Phi]
-                for kk in range(3, kmax + 5):
-                    c2p.append(2.0 * var * phi * he[kk - 3])
+                # c2p_k = 2 var φ He_{k-3}(-α)(k ≥ 3)も同様にまとめる
+                c2p_tail = (2.0 * var * phi)[None, :] * he_stack[:kmax + 2]
+                c2p = fnp.concatenate([fnp.stack([e2_0, 2.0 * sigma * c[0], 2.0 * var * Phi]),
+                                       c2p_tail])
                 # 軸は [Hermite次数, 出力関数, 頂点]。3表面を同じ演算列で運ぶ。
-                coefficients = fnp.stack((fnp.stack(c[:kmax + 5]), fnp.stack(c2p)), axis=1)
-                pair = _pair_terms(
+                c_head = fnp.concatenate([fnp.stack(c[:2]), c_tail[:kmax + 3]])
+                coefficients = fnp.stack((c_head, c2p), axis=1)
+                pair = _pair_terms_batched(
                     coefficients[:, [0, 1, 1], :], coefficients[:, [0, 0, 1], :],
                     R, kmax, t_iij, t_ijj, tdiag, k4, k31,
                 )
