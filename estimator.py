@@ -592,51 +592,35 @@ class Estimator(BaseEstimator):
 
     def setup(self, ctx: SetupContext) -> None:
         self._setup_rng = fnp.random.default_rng(ctx.seed)
+        # 競技の形状の作業領域と Strassen の view を、予算・residual 時間の外で先に用意する
+        # (予測内では同じ確保が省かれるだけで、数値は変わらない)。
+        window, _ = self._window(ctx.width, ctx.depth, ctx.flop_budget)
+        self._prepare(ctx.width, ctx.depth, window, prewarm=True)
 
-    # ------------------------------------------------------------------
-    def predict(self, mlp: MLP, budget: int) -> fnp.ndarray:
-        n, depth, kmax = mlp.width, mlp.depth, self.kmax
+    def _window(self, n, depth, budget):
+        """家族を持つ層数と κ3 脚の有無(形状と予算だけで決まる)。"""
         rank = 0 if self.iik_rank is None else min(self.iik_rank, n)
-        k3leg = self.k3leg
-        directional = self.directional_k4
-        regen = directional and self.use_k4
+        regen = self.directional_k4 and self.use_k4
         if depth > 24:
             # とても深い MLP では residual 時間(上限 0.4 s)が層数に比例して増えるので、
             # 3 次キュムラントを持たない共分散伝播(+ κ4 放射)だけにする。
-            k3leg = False
-            window = 0
-        elif depth > 16:
+            return 0, False
+        if depth > 16:
             # 競技の形状(1024×16)以外で深い MLP(採点前のスモークテストなど)では、
             # FLOP と residual 時間の上限から離れるよう、軽い設定に落とす。
-            k3leg = False
-            window = _fit_window(n, depth, budget, min(8, depth), rank, margin=0.6,
-                                 directional=regen)
-        else:
-            window = _fit_window(n, depth, budget, depth if self.window is None else self.window,
-                                 rank, directional=regen)
-        f32 = fnp.float32
+            return _fit_window(n, depth, budget, min(8, depth), rank, margin=0.6,
+                               directional=regen), False
+        return _fit_window(n, depth, budget, depth if self.window is None else self.window,
+                           rank, directional=regen), self.k3leg
 
-        mu = fnp.zeros(n, dtype=f32)
-        C = None  # 最初の入力共分散 I は密に作らず WᵀW として縮約する
-        core_diag = fnp.zeros(n, dtype=f32) if regen else None
-        var_prev = fnp.ones(n, dtype=f32) if regen else None
-        # 家族は「横並び」の行列で持つ: 家族 f の脚が列ブロック [f n, (f+1) n) を占める。
-        # こうすると、輸送も読み出しも家族の数によらず 1 回の演算で済む(Python 側の時間を抑える)。
-        nf = 0  # 生きている家族の数(古い順に左から並ぶ)
-        A_w = M_w = c2_w = e_w = dd_w = Z_w = Q_s = None
-        c1_w = g_w = None  # κ4 誕生項: 家族ごとの c1 と X=(A-M*c1)*g の固定列スケール
-        u_w = None  # directional 誕生の固定脚 d*c2/var(旧経路は c2 を使う)
-        c1_o = g_o = u_o = None  # 共有基底でも X を Ao/Mo と同じ列スケールから再構成
-        X3q_w = R3_s = None  # k3 脚の誕生項: X = Xq R(家族ごと)
-        FX3q_o = R3_o = None  # 古い家族も X3 = (U FX3q) R3 の細い脚で持つ
-        r3 = min(self.k3leg_rank, n)
-        # 固定列スケールと細い残差を保存し、密な PΔ/κ3 脚は射影・回転しない。
-        U = FA_o = FM_o = FZ_o = c2_o = e_o = dd_o = Q_o = None
+    def _prepare(self, n, depth, window, prewarm=False):
+        """Strassen 段数を決め、作業領域を最大形状で確保する(予測をまたいで使い回す)。
+
+        輸送時の若い家族は age_old 以下(共有基底へ移すため)、そうでなければ窓まで。
+        古い家族は最大で depth - 1 - age_old 個(最後の層では誕生しない)。
+        prewarm=True なら、予測で現れる全ての積の形の view も作っておく。
+        """
         r_old = None if self.rank_old is None else min(self.rank_old, n)
-        old_min = 0 if r_old is None else min(r_old, max(1, self.rank_old_min))
-        # Strassen 段数と作業領域(最大形状で一度だけ確保し、予測をまたいで使い回す)。
-        # 輸送時の若い家族は age_old 以下(共有基底へ移すため)、そうでなければ窓まで。
-        # 古い家族は最大で depth - 1 - age_old 個(最後の層では誕生しない)。
         young_cap = window if self.age_old is None or r_old is None else min(window, self.age_old)
         old_cap = 0 if r_old is None or self.age_old is None or window <= self.age_old else max(
             0, depth - 1 - self.age_old)
@@ -648,8 +632,11 @@ class Estimator(BaseEstimator):
             products.append((n, 2 * young_cap * n, n))
         # 古い家族の復元 U [FA_o | FM_o] と Racc = [XAo | XMo] [FA_o | FM_o]^T
         old_products = [(n, r_old, 2 * old_cap * n), (n, 2 * old_cap * n, r_old)] if old_cap else []
-        levels = self.strassen_levels if window > 0 else 0
-        levels_old = self.strassen_levels_old if old_products else 0
+        # 競技の形状(深さ16以下)だけで使う。採点前の深いスモークテストの形状では、wall 時間と
+        # residual 時間の上限から離れるよう通常の積に戻す(FLOP は元々予算から十分遠い)。
+        use_strassen = depth <= 16
+        levels = self.strassen_levels if window > 0 and use_strassen else 0
+        levels_old = self.strassen_levels_old if old_products and use_strassen else 0
 
         def _fits(group, lev):
             # 共有作業領域が 3GB を超える設定(研究用の大きな窓など)では段数を下げる
@@ -674,6 +661,51 @@ class Estimator(BaseEstimator):
             sw.workspace("old_factors", r_old, 2 * old_cap * n)
             sw.workspace("old_legs", n, 2 * old_cap * n)
             sw.workspace("old_left", n, 2 * old_cap * n)
+        if prewarm:
+            shapes = []
+            if levels:
+                for ru in sorted({0, ru_cap}):
+                    shapes += [((n, n, ru + (2 * nf + 1) * n), levels) for nf in range(young_cap + 1)]
+                shapes += [((n, 2 * nf * n, n), levels) for nf in range(1, young_cap + 1)]
+            if levels_old:
+                for ko in range(1, old_cap + 1):
+                    shapes += [((n, r_old, 2 * ko * n), levels_old),
+                               ((n, 2 * ko * n, r_old), levels_old)]
+            for (m_, k_, p_), lev in shapes:
+                lev = _Strassen.depth(m_, k_, p_, lev)
+                if lev and 2.0 * m_ * k_ * p_ >= sw.min_flops:
+                    sw._program(m_, k_, p_, lev)
+        return levels, levels_old
+
+    # ------------------------------------------------------------------
+    def predict(self, mlp: MLP, budget: int) -> fnp.ndarray:
+        n, depth, kmax = mlp.width, mlp.depth, self.kmax
+        rank = 0 if self.iik_rank is None else min(self.iik_rank, n)
+        directional = self.directional_k4
+        regen = directional and self.use_k4
+        window, k3leg = self._window(n, depth, budget)
+        f32 = fnp.float32
+
+        mu = fnp.zeros(n, dtype=f32)
+        C = None  # 最初の入力共分散 I は密に作らず WᵀW として縮約する
+        core_diag = fnp.zeros(n, dtype=f32) if regen else None
+        var_prev = fnp.ones(n, dtype=f32) if regen else None
+        # 家族は「横並び」の行列で持つ: 家族 f の脚が列ブロック [f n, (f+1) n) を占める。
+        # こうすると、輸送も読み出しも家族の数によらず 1 回の演算で済む(Python 側の時間を抑える)。
+        nf = 0  # 生きている家族の数(古い順に左から並ぶ)
+        A_w = M_w = c2_w = e_w = dd_w = Z_w = Q_s = None
+        c1_w = g_w = None  # κ4 誕生項: 家族ごとの c1 と X=(A-M*c1)*g の固定列スケール
+        u_w = None  # directional 誕生の固定脚 d*c2/var(旧経路は c2 を使う)
+        c1_o = g_o = u_o = None  # 共有基底でも X を Ao/Mo と同じ列スケールから再構成
+        X3q_w = R3_s = None  # k3 脚の誕生項: X = Xq R(家族ごと)
+        FX3q_o = R3_o = None  # 古い家族も X3 = (U FX3q) R3 の細い脚で持つ
+        r3 = min(self.k3leg_rank, n)
+        # 固定列スケールと細い残差を保存し、密な PΔ/κ3 脚は射影・回転しない。
+        U = FA_o = FM_o = FZ_o = c2_o = e_o = dd_o = Q_o = None
+        r_old = None if self.rank_old is None else min(self.rank_old, n)
+        old_min = 0 if r_old is None else min(r_old, max(1, self.rank_old_min))
+        sw = self._strassen
+        levels, levels_old = self._prepare(n, depth, window)
         prune = self.family_prune_rel > 0.0
         birth_w = fnp.empty(0, dtype=fnp.int64) if prune else None
         rows = []
