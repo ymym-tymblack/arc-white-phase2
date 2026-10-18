@@ -10,6 +10,13 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ## Unreleased
 
+### この作業ツリーの最終候補（2026-10-18）
+
+- 大きな因子化行列積をStrassen–Winogradで計算し、球面入力の動径分離・(3,1)二項則・学習済みω補正器を統合。候補と比較条件を `research/frozen_phase2_final.json` に固定した。
+- `estimator.py` のsetup事前構築を1秒目安に制限。クライアント方式でsetupを2.10秒から1.08秒へ短縮し、残りのviewは初回予測で構築する。予測値は変更前と一致し、初回のみreshapeのFLOPが加わりうる。
+- 公式の単一配列上限は4GiBであり、ローカルflopscope-server既定の100MiBとは異なる。公式上限でクライアント方式の実行を確認した。
+- 階数上限の回帰検査をGaussian・球面の両入力モードに拡張。Gaussian初層の解析平均はGaussianモードで検算する。
+
 ### この作業ツリーの推定器改善（2026-10-16）
 
 - 提出入口をrootの `estimator.py` に統一し、ゼロ出力テンプレートと研究候補の誤梱包経路を解消。競技規則の変更ではない。

@@ -2,19 +2,22 @@
 
 import numpy as np
 import flopscope as flops
+import pytest
 from whestbench import SetupContext
 
 from estimator import Estimator
 from local_engine import build_mlp
 
 
-def test_requested_ranks_above_width_preserve_bounded_estimator():
+@pytest.mark.parametrize("sphere_input", [False, True])
+def test_requested_ranks_above_width_preserve_bounded_estimator(sphere_input):
     width, depth, budget = 4, 2, 2**41
     mlp = build_mlp(width, depth, seed=0)
 
     def predict(rank, old_rank):
         estimator = Estimator(
             directional_k4=True,
+            sphere_input=sphere_input,
             age_old=None,
             iik_rank=rank,
             k3leg_rank=rank,
@@ -38,6 +41,7 @@ def test_requested_ranks_above_width_preserve_bounded_estimator():
     oversized = predict(16, 256)
     bounded = predict(width, width)
     np.testing.assert_allclose(oversized, bounded, rtol=1e-6, atol=1e-7)
-    weights = np.asarray(mlp.weights[0], dtype=np.float64)
-    exact_first_mean = np.sqrt(np.sum(weights * weights, axis=0) / (2 * np.pi))
-    np.testing.assert_allclose(oversized[0], exact_first_mean, rtol=3e-6, atol=2e-6)
+    if not sphere_input:
+        weights = np.asarray(mlp.weights[0], dtype=np.float64)
+        exact_first_mean = np.sqrt(np.sum(weights * weights, axis=0) / (2 * np.pi))
+        np.testing.assert_allclose(oversized[0], exact_first_mean, rtol=3e-6, atol=2e-6)
