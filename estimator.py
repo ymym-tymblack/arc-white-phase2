@@ -32,6 +32,7 @@ g は raw postactivation の K4/K22 行和から求め、次層の対角を正�
 from __future__ import annotations
 
 import math
+import time
 
 import flopscope as flops
 import flopscope.numpy as fnp
@@ -975,6 +976,10 @@ class Estimator(BaseEstimator):
     # 若い家族の輸送と D21 読み出しの大きな積を Strassen–Winograd で計算する段数(0 なら通常の積)。
     strassen_levels = 4
     strassen_levels_old = 4  # 共有基底の古い家族の復元と Racc の積の段数
+    # setup で Strassen の手順(view の組)を作ってよい時間(秒)。採点のクライアント/サーバー方式では
+    # view 1 つが 1 往復の通信になり、全部で約 2 秒かかる。setup の上限(5 秒、超えると提出全体が
+    # 失敗)から離すため、使う回数の多い形から作り、残りは最初の予測で作る(数値は同じ)。
+    prewarm_seconds = 1.0
 
     def __init__(self, **kwargs) -> None:
         self._setup_rng = None
@@ -1016,7 +1021,7 @@ class Estimator(BaseEstimator):
 
         輸送時の若い家族は age_old 以下(共有基底へ移すため)、そうでなければ窓まで。
         古い家族は最大で depth - 1 - age_old 個(最後の層では誕生しない)。
-        prewarm=True なら、予測で現れる全ての積の形の view も作っておく。
+        prewarm=True なら、予測で現れる積の形の view も prewarm_seconds の間だけ作っておく。
         """
         r_old = None if self.rank_old is None else min(self.rank_old, n)
         young_cap = window if self.age_old is None or r_old is None else min(window, self.age_old)
@@ -1060,16 +1065,21 @@ class Estimator(BaseEstimator):
             sw.workspace("old_legs", n, 2 * old_cap * n)
             sw.workspace("old_left", n, 2 * old_cap * n)
         if prewarm:
+            # 定常の層で毎回使う形(読み出し・古い家族ありの輸送)を先に、残りは使う順の逆に並べる
             shapes = []
             if levels:
-                for ru in sorted({0, ru_cap}):
-                    shapes += [((n, n, ru + (2 * nf + 1) * n), levels) for nf in range(young_cap + 1)]
-                shapes += [((n, 2 * nf * n, n), levels) for nf in range(1, young_cap + 1)]
+                shapes += [((n, 2 * nf * n, n), levels) for nf in range(young_cap, 0, -1)]
+                if ru_cap:
+                    shapes.insert(1, ((n, n, ru_cap + (2 * young_cap + 1) * n), levels))
+                shapes += [((n, n, (2 * nf + 1) * n), levels) for nf in range(young_cap, -1, -1)]
             if levels_old:
-                for ko in range(1, old_cap + 1):
+                for ko in range(old_cap, 0, -1):
                     shapes += [((n, r_old, 2 * ko * n), levels_old),
                                ((n, 2 * ko * n, r_old), levels_old)]
+            start = time.perf_counter()
             for (m_, k_, p_), lev in shapes:
+                if time.perf_counter() - start > self.prewarm_seconds:
+                    break
                 lev = _Strassen.depth(m_, k_, p_, lev)
                 if lev and 2.0 * m_ * k_ * p_ >= sw.min_flops:
                     sw._program(m_, k_, p_, lev)
