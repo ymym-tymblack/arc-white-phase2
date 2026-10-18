@@ -769,7 +769,7 @@ class Estimator(BaseEstimator):
         prune = self.family_prune_rel > 0.0
         birth_w = fnp.empty(0, dtype=fnp.int64) if prune else None
         rows = []
-        A_new = c = None
+        A_new = c = post_k4 = post_k22 = k3d = u = None  # 前層の量(研究用フックの特徴)
 
         for layer, w in enumerate(mlp.weights):
             last = layer == depth - 1
