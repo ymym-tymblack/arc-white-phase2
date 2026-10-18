@@ -16,6 +16,8 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 - `estimator.py` のsetup事前構築を1秒目安に制限。クライアント方式でsetupを2.10秒から1.08秒へ短縮し、残りのviewは初回予測で構築する。予測値は変更前と一致し、初回のみreshapeのFLOPが加わりうる。
 - 公式の単一配列上限は4GiBであり、ローカルflopscope-server既定の100MiBとは異なる。公式上限でクライアント方式の実行を確認した。
 - 階数上限の回帰検査をGaussian・球面の両入力モードに拡張。Gaussian初層の解析平均はGaussianモードで検算する。
+- 最終128網の並列比較は基準126件・計算削減128件・統合128件が時間超過し、採用条件未達。結果は保持し、改善確認済みとは扱わない。
+- 最終評価ハーネスに網単位checkpoint・失敗の文字列記録を追加し、spawn先でBLASスレッド設定より先にNumPyを読む初期化順を修正。最終集合の追加実行には明示承認を要する。
 
 ### この作業ツリーの推定器改善（2026-10-16）
 
