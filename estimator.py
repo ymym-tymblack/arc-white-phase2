@@ -54,12 +54,13 @@ def _omega_g(layer: int) -> float:
 
 
 def _hermite_neg_alpha(alpha, upto: int):
-    """He_0..He_upto(-alpha) のリスト。"""
-    x = -alpha
-    out = [fnp.ones_like(x), x]
-    for j in range(1, upto):
-        out.append(x * out[j] - float(j) * out[j - 1])
-    return out[: upto + 1]
+    """He_0..He_upto(-alpha) を (upto+1, n) の行列で返す。
+
+    単項式 (-α)^p の表(vander)と固定係数の積で一括に作る(漸化式の約 20 演算を 4 演算に)。
+    桁落ちを避けるため FP64 で評価し、FP32 に戻す。
+    """
+    powers = fnp.vander(-fnp.asarray(alpha, dtype=fnp.float64), N=upto + 1, increasing=True)
+    return fnp.matmul(_HERMITE_COEFFS[upto], powers.T).astype(fnp.float32)
 
 
 def _estimate_flops(n: int, depth: int, window: int, rank: int,
@@ -234,6 +235,7 @@ def _hermite_power_matrix(top):
 
 
 _POSITIVE_HE10 = _hermite_power_matrix(10)
+_HERMITE_COEFFS = {top: _hermite_power_matrix(top) for top in range(1, 12)}
 _POSITIVE_LOWER_INDICES = fnp.asarray([
     [max(p - k, 0) for k in range(5)] for p in range(1, 5)
 ], dtype=fnp.int64)
@@ -983,8 +985,8 @@ class Estimator(BaseEstimator):
 
             # --- Hermite 係数 (p=1) ---  c_k = σφ He_{k-2}(-α)(k ≥ 2)を 1 回の積でまとめて作る
             top = max(kmax + 4, 7)
-            he = _hermite_neg_alpha(alpha, top)
-            he_stack = fnp.stack(he[:top - 1])
+            he = _hermite_neg_alpha(alpha, top)  # (top+1, n)。he[k] は He_k(-α) の行 view
+            he_stack = he[:top - 1]
             sp = sigma * phi
             c_tail = sp[None, :] * he_stack
             c = [m * Phi + sp, sigma * Phi] + [c_tail[k] for k in range(top - 1)]
