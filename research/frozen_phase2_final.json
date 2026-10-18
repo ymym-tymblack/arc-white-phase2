@@ -1,0 +1,35 @@
+{
+  "created_utc": "2026-10-18",
+  "protocol": "research/protocol_phase2_final.json",
+  "candidates": {
+    "baseline": {
+      "path": "research/frozen_phase2/baseline.py",
+      "sha256": "e681975f4d9024e85097f671b9a6020b02663b08a77d482b55e7de528041c88e",
+      "kwargs": {},
+      "source_commit": "22e1dc1"
+    },
+    "exact_compute": {
+      "path": "research/frozen_phase2/exact_compute.py",
+      "sha256": "34da028906f6d314e3a46c378835b677e268484dd14e513ef334288c9bd991f5",
+      "kwargs": {"sphere_input": false, "k31_two_term": 0.0},
+      "source_commit": "7554061"
+    },
+    "combined": {
+      "path": "research/frozen_phase2/combined.py",
+      "sha256": "f13be0e5b38a53e78acf181642379fdcedac388ddde0bdb38ebe0dbfd9e8ac92",
+      "kwargs": {}
+    }
+  },
+  "comparisons": {
+    "exact_compute": ["exact_compute", "baseline"],
+    "combined": ["combined", "exact_compute"],
+    "overall": ["combined", "baseline"]
+  },
+  "execution": {"workers": 8, "threads": 4},
+  "notes": [
+    "最終集合の予測前に固定。結果を見た後の再調整・再選択には使わない。",
+    "exact_computeは球面入力と(3,1)二項則を無効化し、基準と同じ数式を比較する。",
+    "combinedはroot estimator.pyの固定コピー。setup事前構築は1秒を目安に打ち切るため、初回のFLOPに未構築viewのreshape費用が加わりうる。",
+    "配列上限は公式docs/troubleshooting/common-participant-errors.mdに従い4GiB。ローカルserver既定100MiBとは異なる。"
+  ]
+}
