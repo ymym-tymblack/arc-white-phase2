@@ -68,11 +68,40 @@ def net_losses(pred, truth, aux_weight):
     return final, final
 
 
+def resource_config(overrides=None):
+    """現在の移植が忠実に表現する資源設定だけを許可する(窓は全16層)。"""
+    values = {key: getattr(chain.ChainConfig, key) for key in
+              ("kmax", "iik_rank", "age_old", "rank_old", "k3leg_rank")}
+    values["window"] = 16
+    overrides = {} if overrides is None else overrides
+    if not isinstance(overrides, dict):
+        raise ValueError("--config must contain a JSON object")
+    unknown = set(overrides) - set(values)
+    if unknown:
+        raise ValueError(f"unsupported resource settings: {sorted(unknown)}")
+    values.update(overrides)
+    if any(type(value) is not int for value in values.values()):
+        raise ValueError("resource settings must be integers")
+    if values["kmax"] != 3:
+        raise ValueError("only kmax=3 is supported by the fixed Hermite tables")
+    if values["window"] != 16:
+        raise ValueError("only full window=16 is supported; family expiry is not implemented")
+    if not 0 <= values["age_old"] <= 16:
+        raise ValueError("age_old must be in [0, 16]")
+    for key in ("rank_old", "iik_rank", "k3leg_rank"):
+        if not 1 <= values[key] <= 1024:
+            raise ValueError(f"{key} must be in [1, 1024]")
+    cfg = chain.ChainConfig()
+    for key, value in values.items():
+        setattr(cfg, key, value)
+    return cfg, values
+
+
 @torch.no_grad()
-def evaluate(P, ds, bs, dev):
+def evaluate(P, ds, bs, dev, cfg=chain.ChainConfig):
     mses, gids = [], []
     for W, truth, gid in loader(ds, bs, False, 0):
-        pred = chain.predict(P, W.to(dev, non_blocking=True))
+        pred = chain.predict(P, W.to(dev, non_blocking=True), cfg=cfg)
         final, _ = net_losses(pred, truth.to(dev), 0.0)
         mses += final.cpu().tolist()
         gids += [int(x) for x in gid]
@@ -107,8 +136,10 @@ def main():
     ap.add_argument("--resume-from", type=Path, help="continue a checkpoint in a distinct run directory")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--init", default="", help="checkpoint to warm-start parameters from")
+    ap.add_argument("--config", type=Path, help="JSON resource overrides; window=16 and kmax=3 only")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    requested_config = json.loads(a.config.read_text()) if a.config else None
     resume_path = a.resume_from or (CKPT / a.run / "latest.pt" if a.resume else None)
     ck = None
     if resume_path:
@@ -120,6 +151,12 @@ def main():
         for key, value in ck["args"].items():
             if key not in {"run", "resume", "resume_from", "init", "workers"}:
                 setattr(a, key, value)
+    if ck is not None:
+        cfg, config_values = resource_config(ck.get("chain_config"))
+        if requested_config is not None and resource_config(requested_config)[1] != config_values:
+            ap.error("resume resource settings differ from checkpoint; use --init for a new resource run")
+    else:
+        cfg, config_values = resource_config(requested_config)
     if a.mb < a.bs or a.mb % a.bs:
         ap.error("--mb must be a positive multiple of --bs")
     if a.ckpt_every <= 0:
@@ -189,19 +226,20 @@ def main():
     run = wandb.init(project="arc-whitebox-adam", name=a.run, id=a.run, resume="allow",
                      dir=os.environ.get("WANDB_DIR", "/kaggle/ext/wandb"),
                      config=dict({k: str(v) if isinstance(v, Path) else v for k, v in vars(a).items()},
-                                 n_train=len(train), n_dev=len(dev_ds),
+                                 n_train=len(train), n_dev=len(dev_ds), chain_config=config_values,
                                  loss_scale=LOSS_SCALE, loss="final-layer MSE mean (+aux)"))
 
     def checkpoint(name):
         save(out / name, params=P.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(),
              state=state, args={k: str(v) if isinstance(v, Path) else v for k, v in vars(a).items()},
              export=P.export(), train_gids=[gid for _, _, gid in train.items],
+             chain_config=config_values,
              rng=dict(python=random.getstate(), numpy=np.random.get_state(),
                       torch=torch.get_rng_state(), cuda=torch.cuda.get_rng_state_all()))
 
     if state["baseline"] is None:
         t = time.time()
-        base, gids = evaluate(P, dev_ds, a.val_bs, dev)
+        base, gids = evaluate(P, dev_ds, a.val_bs, dev, cfg=cfg)
         state["baseline"] = dict(mse=base.tolist(), gids=gids)
         state["best"] = float(base.mean())
         print(f"baseline dev64 mse {base.mean():.4e} ({time.time()-t:.0f}s)", flush=True)
@@ -210,7 +248,7 @@ def main():
         if a.init:
             # 既定値で基準を測ってから、別の run の学習済みパラメータで始める(最適化器は新規)
             P.load_state_dict(torch.load(a.init, map_location=dev, weights_only=False)["params"])
-            init, _ = evaluate(P, dev_ds, a.val_bs, dev)
+            init, _ = evaluate(P, dev_ds, a.val_bs, dev, cfg=cfg)
             state["init_mse"] = float(init.mean())
             print(f"init {a.init} dev64 mse {init.mean():.4e}", flush=True)
             if init.mean() < state["best"]:
@@ -230,7 +268,7 @@ def main():
             if bi < skip_batches:
                 continue
             W, truth = W.to(dev, non_blocking=True), truth.to(dev, non_blocking=True)
-            pred = chain.predict(P, W, checkpoint=not a.no_ckpt_grad)
+            pred = chain.predict(P, W, cfg=cfg, checkpoint=not a.no_ckpt_grad)
             final, loss_net = net_losses(pred, truth, a.aux_weight)
             loss = loss_net.sum() * (LOSS_SCALE / a.mb)
             if not torch.isfinite(loss):
@@ -270,7 +308,7 @@ def main():
         # --- 検証 ---
         P.eval()
         t1 = time.time()
-        mse, gids = evaluate(P, dev_ds, a.val_bs, dev)
+        mse, gids = evaluate(P, dev_ds, a.val_bs, dev, cfg=cfg)
         ratio = mse / base
         rec = dict(epoch=epoch + 1, dev_mse=float(mse.mean()), dev_ratio=float(mse.mean() / base.mean()),
                    dev_paired_ratio=float(np.mean(ratio)), improved=int((mse < base).sum()),
