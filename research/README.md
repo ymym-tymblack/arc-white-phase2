@@ -146,6 +146,35 @@ p1方向のdtype修正後も傾向は変わらず、detach・再計算の不整�
 `research/torch_port/adam_gradient_audit_record.json` とそこから参照する実測JSON。
 したがって「Adam実装が悪い」「勾配は完全に正しい」「Muonなら改善する」のいずれも、この監査だけでは断定しない。
 
+### epoch19安全化版の提出方式での再現
+
+同じ開発64網でepoch19安全化版をexact flopscope実行した。
+基準64網は `--reuse-pair` でソースSHA・dataset・実行条件・予算・完全性を照合して再利用し、
+新しい候補は照合用4網の保存予測を再利用して残り60網を実行した。
+照合dumpの上限は600秒だったが、この4件の実測はすべて63秒未満であり、
+残り60件には120秒上限を適用した。全64件の例外・予算超過・非有限値は0。
+
+| 同じ開発64網、flopscope | 最終層MSE平均 | C/B平均 | adjusted score平均 |
+|---|---:|---:|---:|
+| 提出済み4段版（保存済み対照） | 2.1546037940e-8 | 0.2437057623 | 5.2508935999e-9 |
+| epoch19安全化版 | 2.0585846665e-8 | 0.2437057554 | 5.0168893097e-9 |
+
+平均score比0.95543534、4.4565%低下、62/64網で改善。
+対bootstrap95%区間は平均scoreの比で[0.949174,0.961650]、
+網ごとの比の平均で[0.949525,0.961694]。
+epoch4からの追加低下は0.3255%（GPU移植では0.3406%）だった。
+記録は `results/dev64_adam_epoch019_optimized_pair.json` と
+`results/dev64_adam_epoch019_optimized_comparison.json`。
+
+静かな1スレッド7ケースは全件通過し、1024×16のresidual最大0.324秒・RSS最大3.37GiB。
+公式4GiB配列上限のclient/serverでもsetup1.066秒、residual最大0.193秒、
+保存済みインプロセス予測との差0で2回完走した。
+記録は `results/adam_epoch019_residual_optimized_preflight.json` と同prefixの `_client.json`。
+並列評価のresidual最大0.622秒は安全判定には使わない。ここでも開発選択による楽観性と、
+未使用holdoutでの最終確認は区別する。
+SDK `whest validate` も通過したが、これは幅4・深さ2の契約smokeであり、
+上記の幅1024実行・時間検査・client照合の代わりにはしない。
+
 ### 係数固定のdestroy/repair焼きなまし
 
 `research/resource_search/search.py` でepoch4の7係数・補正器を固定し、

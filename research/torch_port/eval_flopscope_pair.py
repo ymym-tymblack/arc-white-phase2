@@ -58,6 +58,8 @@ def main():
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--seed-candidate-ref", type=Path)
+    parser.add_argument("--reuse-pair", type=Path,
+                        help="同じsource/data/実行条件の既存64網結果を再利用する")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     if args.out.exists():
@@ -89,6 +91,24 @@ def main():
         with checkpoint.open("a") as stream:
             stream.write(json.dumps(dict(name=name, result=result), allow_nan=False) + "\n")
         saved[(name, result["idx"])] = result
+
+    if args.reuse_pair:
+        previous = json.loads(args.reuse_pair.read_text())
+        prior_identity = previous["identity"]
+        if any(prior_identity[key] != identity[key] for key in
+               ("dataset", "execution", "wall_limit", "flop_budget")):
+            raise SystemExit("Previous pair has different data/execution/budget")
+        for name, spec in sources.items():
+            matches = [run for run in previous["runs"].values()
+                       if run["sha256"] == spec["sha256"] and run.get("kwargs") == {}]
+            for run in matches:
+                if run["failures"] or sorted(row["idx"] for row in run["per"]) != list(range(64)):
+                    raise SystemExit("Previous source results are incomplete or failed")
+                for row in run["per"]:
+                    if row["sec"] > 120 or row["flops"] > BUDGET:
+                        raise SystemExit("Previous source row violates prediction limits")
+                    if (name, row["idx"]) not in saved:
+                        save(name, dict(row, reused_pair=str(args.reuse_pair.resolve())))
 
     if args.seed_candidate_ref:
         ref = args.seed_candidate_ref

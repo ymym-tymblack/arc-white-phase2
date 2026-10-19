@@ -21,6 +21,7 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 - 元224網・元560step cosineを保ってepoch20まで継続し、epoch19を選択。開発PyTorch MSEはepoch4から追加0.3406%低下したが、計画上限停止であり収束の証明とはしない。追加198網はこの実験には未使用。
 - checkpoint有無・反復計算は全勾配までbitwise一致。一方FP32有限差分は不合格、高精度shadowにも最大約1.47%差が残る。数学的な鎖の修正やMuon優位の主張は行わない。
 - `train.py` のresumeで引数・データ順・batch位置・Adam・RNG・scheduler長を復元し、明示した資源設定を学習・評価・checkpointへ一貫適用。再学習済みソースの再exportにも対応した。
+- epoch19安全化版のexact開発64網評価は平均adjusted scoreが提出済み版より4.4565%低下、62/64網で改善。7ケース安全検査・4GiB client/server照合・SDK validateを通過した。基準64件はhash等を検証して再利用し、未使用holdoutとは区別する。
 
 ### 学習値を固定したresidual安全化（2026-10-19）
 
