@@ -284,18 +284,19 @@ def phase_scan(args, runner):
 
 
 def suggest(trial, defaults) -> dict:
+    """既定値の周りの局所探索(試行1回が数十分かかるので、過去の走査で外れた域は除く)。"""
     kw = dict(
-        window=trial.suggest_int("window", 10, 16),
+        window=trial.suggest_int("window", 12, 16),
         age_old=trial.suggest_int("age_old", 4, 8),
         rank_old=trial.suggest_int("rank_old", 128, 320, step=32),
-        iik_rank=trial.suggest_int("iik_rank", 2, 16, step=2),
-        k3leg_rank=trial.suggest_int("k3leg_rank", 2, 16, step=2),
+        iik_rank=trial.suggest_int("iik_rank", 2, 12, step=2),
+        k3leg_rank=trial.suggest_int("k3leg_rank", 2, 12, step=2),
         kmax=trial.suggest_int("kmax", 2, 4),
-        regen_p0=trial.suggest_float("regen_p0", 0.6, 2.6),
-        regen_p1=trial.suggest_float("regen_p1", 0.4, 2.4),
-        regen_p2=trial.suggest_float("regen_p2", 0.4, 2.4),
-        regen_p3=trial.suggest_float("regen_p3", 0.6, 2.6),
-        regen_feed=trial.suggest_float("regen_feed", 0.0, 1.2),
+        regen_p0=trial.suggest_float("regen_p0", 1.0, 2.2),
+        regen_p1=trial.suggest_float("regen_p1", 0.7, 1.8),
+        regen_p2=trial.suggest_float("regen_p2", 0.7, 1.8),
+        regen_p3=trial.suggest_float("regen_p3", 1.0, 2.2),
+        regen_feed=trial.suggest_float("regen_feed", 0.2, 0.9),
         learned_omega=trial.suggest_categorical("learned_omega", [True, False]),
     )
     # 学習補正器は k31_two_term == 3.0 でだけ有効。補正器を使う試行では 3.0 に固定し、
@@ -303,7 +304,7 @@ def suggest(trial, defaults) -> dict:
     if kw["learned_omega"]:
         kw["k31_two_term"] = 3.0
     else:
-        kw["k31_two_term"] = trial.suggest_float("k31_two_term", 1.0, 4.5)
+        kw["k31_two_term"] = trial.suggest_float("k31_two_term", 2.0, 4.0)
     return kw
 
 
@@ -322,7 +323,7 @@ def load_study(optuna, runner, seed):
         return trial.user_attrs.get("constraint", [1.0])
 
     sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True, group=True,
-                                         n_startup_trials=12, constant_liar=True,
+                                         n_startup_trials=8, constant_liar=True,
                                          constraints_func=constraints)
     STORE.mkdir(parents=True, exist_ok=True)
     return optuna.create_study(study_name=STUDY_NAME, storage=f"sqlite:///{STUDY_DB}",
@@ -337,42 +338,64 @@ def trial_records(study, runner):
     return recs
 
 
+def _record(t, s):
+    t.set_user_attr("kwargs", s["kwargs"])
+    for k in ("adj", "mse", "cb", "ops", "ops_ratio", "ratio_mean", "ratio_of_means",
+              "improved", "failures", "corrector_active", "max_resid_loaded", "max_sec_loaded"):
+        t.set_user_attr(k, s.get(k))
+    t.set_user_attr("n_rows", s["n"])
+    t.set_user_attr("constraint", [s["ops_ratio"] - OPS_LIMIT if s.get("ops_ratio") else 1.0,
+                                   float(s["failures"])])
+    t.set_user_attr("feasible", feasible(s))
+
+
 def phase_optuna(args, runner):
+    """2 段の忠実度: dev 0〜7 で既定より ratio_of_means > prune 倍、または op 制約違反なら
+    打ち切り(PRUNED、TPE は完了試行より悪い扱い)。残りだけ dev 0〜15 で完了させる。"""
     import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    idxs = parse_range(args.indices)
+    idxs = list(parse_range(args.indices))
+    low = idxs[:8]
     runner.evaluate([{}], idxs)
     study = load_study(optuna, runner, args.seed)
+    for t in study.trials:  # 中断で残った RUNNING は失敗扱いにして再開する
+        if t.state.name == "RUNNING":
+            study.tell(t.number, state=optuna.trial.TrialState.FAIL)
     if len(study.trials) == 0:
         # 既定設定と資源走査の上位を最初の試行として入れる(同じ行はキャッシュから再利用)
         study.enqueue_trial(to_params({}, runner.defaults))
         scan_path = RESULTS / "tune_phase2_scan.json"
         if scan_path.exists():
             scan = json.loads(scan_path.read_text())
-            for s in [s for s in scan["configs"] if feasible(s)][:args.warm]:
+            for s in [s for s in scan["configs"] if feasible(s) and s["kwargs"]][:args.warm]:
                 study.enqueue_trial(to_params(s["kwargs"], runner.defaults))
     run = wandb_run("optuna", args, runner)
     finished = sum(t.state.is_finished() for t in study.trials)
     while finished < args.trials:
         batch = [study.ask() for _ in range(min(args.batch, args.trials - finished))]
         kws = [suggest(t, runner.defaults) for t in batch]
-        sums = runner.evaluate(kws, idxs)
-        for t, kw, s in zip(batch, kws, sums):
-            ok = feasible(s)
-            t.set_user_attr("kwargs", s["kwargs"])
-            for k in ("adj", "mse", "cb", "ops", "ops_ratio", "ratio_mean", "ratio_of_means",
-                      "improved", "failures", "corrector_active", "max_resid_loaded", "max_sec_loaded"):
-                t.set_user_attr(k, s.get(k))
-            t.set_user_attr("constraint", [s["ops_ratio"] - OPS_LIMIT if s.get("ops_ratio") else 1.0,
-                                           float(s["failures"])])
-            t.set_user_attr("feasible", ok)
+        first = runner.evaluate(kws, low)
+        keep = []
+        for t, kw, s in zip(batch, kws, first):
+            if feasible(s) and s["ratio_of_means"] <= args.prune:
+                keep.append((t, kw))
+                continue
+            _record(t, s)
+            t.report(s["adj"], step=len(low))
+            study.tell(t, state=optuna.trial.TrialState.PRUNED)
+            log_summary(run, t.number, s, "optuna/")
+            print(f"trial {t.number} PRUNE@{len(low)} {short(s)}", flush=True)
+        sums = runner.evaluate([kw for _, kw in keep], idxs)
+        for (t, _), s in zip(keep, sums):
+            _record(t, s)
             study.tell(t, s["adj"])
             log_summary(run, t.number, s, "optuna/")
-            print(f"trial {t.number} {'OK ' if ok else 'REJ'} {short(s)}", flush=True)
+            print(f"trial {t.number} {'OK ' if feasible(s) else 'REJ'} {short(s)}", flush=True)
         finished = sum(t.state.is_finished() for t in study.trials)
         save("trials", dict(candidate=str(runner.candidate), sha=runner.sha, study=STUDY_NAME,
-                            storage=str(STUDY_DB), indices=list(idxs), ops_limit=OPS_LIMIT,
-                            default=runner.summary({}, idxs), trials=trial_records(study, runner)))
+                            storage=str(STUDY_DB), indices=idxs, low_fidelity=low, prune=args.prune,
+                            ops_limit=OPS_LIMIT, default=runner.summary({}, idxs),
+                            trials=trial_records(study, runner)))
     if run:
         run.finish()
 
@@ -443,6 +466,8 @@ def main():
     p.add_argument("--warm", type=int, default=3)
     p.add_argument("--top", type=int, default=None)
     p.add_argument("--seed", type=int, default=20261019)
+    p.add_argument("--prune", type=float, default=1.02,
+                   help="dev 0〜7 の平均の比(既定比)がこれを超えた試行は 0〜15 へ進めない")
     args = p.parse_args()
     if args.workers * args.threads > 16:
         raise SystemExit("この調整に割り当てた CPU は 16 スレッドまで")
