@@ -337,8 +337,8 @@ def smoke(args):
 def run(args):
     if not args.cpu_released:
         raise SystemExit("CPU release required; do not evaluate while parent profiles residual safety")
-    if args.workers * args.threads > 30:
-        raise SystemExit("Resource search must reserve 2 of 32 CPU threads")
+    if args.workers * args.threads > 32:
+        raise SystemExit("Resource search exceeds the 32 released CPU threads")
     audit = source_audit(args.source)
     identity = dict(version=VERSION, source_sha256=audit["source_sha256"],
                     dataset=eval_mini.dataset_identity(DATASET, "full"), flop_budget=BUDGET,
@@ -458,7 +458,7 @@ def main():
     parser.add_argument("--proposals", type=int, default=24)
     parser.add_argument("--max-promotions", type=int, default=8)
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--threads", type=int, default=7)
+    parser.add_argument("--threads", type=int, default=8)
     parser.add_argument("--cpu-released", action="store_true")
     args = parser.parse_args()
     if args.proposals < 4 or args.max_promotions < 2 or args.workers < 1 or args.threads < 1:
