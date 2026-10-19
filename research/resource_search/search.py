@@ -34,9 +34,10 @@ DATASET = "/kaggle/ext/full_dev64"
 COEFFICIENTS = ("k31_two_term", "regen_p0", "regen_p1", "regen_p2", "regen_p3",
                 "regen_feed", "regen_use31")
 GRID = dict(age_old=(4, 5, 6, 7, 8), rank_old=(128, 192, 256, 320),
-            window=(12, 14, 16), iik_rank=(2, 4, 6, 8), k3leg_rank=(2, 4, 6, 8),
-            kmax=(3, 4), strassen_levels=(2, 3, 4), strassen_levels_old=(2, 3, 4))
-VERSION = 1
+            window=(16,), iik_rank=(2, 4, 6, 8), k3leg_rank=(2, 4, 6, 8),
+            kmax=(3,), strassen_levels=(2, 3, 4), strassen_levels_old=(2, 3, 4))
+# 再学習時のtorch鎖と一致させるため、window/kmaxは監査済みの既定値に固定する。
+VERSION = 2
 
 
 def digest_bytes(data):
@@ -122,7 +123,8 @@ def propose(rng, current, defaults, seen, step):
             return out, "coupled_age_rank"
     for _ in range(1000):
         out = dict(defaults, **current)
-        keys = rng.sample(sorted(defaults), rng.choice((2, 3)))
+        keys = rng.sample(sorted(key for key in defaults if len(GRID[key]) > 1),
+                          rng.choice((2, 3)))
         for key in keys:
             out[key] = rng.choice([value for value in GRID[key] if value != out[key]])
         out = repair(out, defaults)
