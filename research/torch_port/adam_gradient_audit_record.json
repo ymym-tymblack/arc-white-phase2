@@ -16,5 +16,8 @@
   "repeated_forward_backward": "bitwise identical; CPU/CUDA RNG states unchanged",
   "static_review": "No detach in predict/_layer. State replaced rather than mutated. QR sketches are fixed next-layer weight columns; all QR paths connected to autograd. Export-only detach is intentional.",
   "chain_math_changed": false,
-  "reports": ["results/adam1_epoch004_gradient_audit.json", "results/adam1_epoch004_gradient_audit_fp64_shadow.json", "results/adam1_epoch004_gradient_diagnosis.json", "results/adam1_resume_audit.json"]
+  "shadow_p1_perturbation_correction": "The original regen_p1 basis vector used default torch.float32 even in FP64 shadow; multiplying epsilon before promotion explains steps such as .009999999776. Added explicit active dtype and reran only regen_p1 shadow comparisons. Corrected steps are .010000000000000009; maximum relative error remains 0.014743012148764379, so this tiny perturbation quantization does not explain the percent-level discrepancy. No mathematical chain or training change.",
+  "corrected_p1_command": "research/gpu_env.sh research/torch_port/audit_gradients.py --checkpoint /kaggle/ext/torch_ckpt/adam1/best.pt --out results/adam1_epoch004_gradient_audit_fp64_p1_typed.json --fp64-shadow --parameters regen_p1",
+  "corrected_p1_report": "results/adam1_epoch004_gradient_audit_fp64_p1_typed_complete.json",
+  "reports": ["results/adam1_epoch004_gradient_audit.json", "results/adam1_epoch004_gradient_audit_fp64_shadow.json", "results/adam1_epoch004_gradient_diagnosis.json", "results/adam1_resume_audit.json", "results/adam1_epoch004_gradient_audit_fp64_p1_typed_complete.json"]
 }

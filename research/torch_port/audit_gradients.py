@@ -18,6 +18,7 @@ def main():
     ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--indices", default="0,1")
+    ap.add_argument("--parameters", default="", help="optional comma-separated finite-difference targets")
     ap.add_argument("--fp64-shadow", action="store_true",
                     help="diagnostic only: identical formulas without FP32 rounding; never used for training")
     a = ap.parse_args()
@@ -46,10 +47,15 @@ def main():
     norm = torch.sqrt(sum((d.double() ** 2).sum() for d in direction))
     direction = [(d / norm).to(dtype) for d in direction]
     targets = [("b2", [(P.b2, torch.ones_like(P.b2))]),
-               ("regen_p1", [(P.regen_p, torch.tensor([0., 1., 0., 0.], device="cuda"))]),
+               ("regen_p1", [(P.regen_p, torch.tensor([0., 1., 0., 0.], device="cuda", dtype=dtype))]),
                ("regen_feed", [(P.regen_feed, torch.ones_like(P.regen_feed))]),
                ("regen_use31", [(P.regen_use31, torch.ones_like(P.regen_use31))]),
                ("corrector_W_unit_direction", list(zip(P.corr_W, direction)))]
+    if a.parameters:
+        requested = set(a.parameters.split(","))
+        if requested - {label for label, _ in targets}:
+            ap.error("unknown finite-difference target")
+        targets = [(label, pieces) for label, pieces in targets if label in requested]
     for index in map(int, a.indices.split(",")):
         W, truth, gid = ds[index]
         W, truth = W[None].cuda().to(dtype), truth[None].cuda()
