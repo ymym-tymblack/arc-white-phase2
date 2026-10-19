@@ -15,6 +15,7 @@ import json
 import math
 import os
 import sys
+import random
 import time
 from pathlib import Path
 
@@ -36,8 +37,7 @@ class NetSet(torch.utils.data.Dataset):
         for name in names:
             d = DATA / name
             if not (d / "truth.npy").exists():
-                print(f"skip {name}: not prepared", flush=True)
-                continue
+                raise FileNotFoundError(f"requested dataset is not prepared: {d}")
             ids = json.loads((d / "ids.json").read_text())
             truth = np.load(d / "truth.npy")
             for k, gid in enumerate(ids):
@@ -51,12 +51,13 @@ class NetSet(torch.utils.data.Dataset):
         return torch.from_numpy(np.load(path)), torch.from_numpy(truth), gid
 
 
-def loader(ds, batch, shuffle, seed, workers=2):
+def loader(ds, batch, shuffle, seed, workers=1):
     g = torch.Generator()
     g.manual_seed(seed)
     return torch.utils.data.DataLoader(ds, batch_size=batch, shuffle=shuffle, generator=g,
                                        num_workers=workers, pin_memory=True,
-                                       persistent_workers=False, prefetch_factor=2)
+                                       persistent_workers=False,
+                                       **({"prefetch_factor": 2} if workers else {}))
 
 
 def net_losses(pred, truth, aux_weight):
@@ -103,13 +104,33 @@ def main():
     ap.add_argument("--no-ckpt-grad", action="store_true", help="disable per-layer checkpointing")
     ap.add_argument("--freeze", default="", help="comma list: scalars,corrector")
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--resume-from", type=Path, help="continue a checkpoint in a distinct run directory")
+    ap.add_argument("--workers", type=int, default=1)
+    ap.add_argument("--init", default="", help="checkpoint to warm-start parameters from")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    resume_path = a.resume_from or (CKPT / a.run / "latest.pt" if a.resume else None)
+    ck = None
+    if resume_path:
+        if a.init:
+            ap.error("--init and resume are mutually exclusive")
+        ck = torch.load(resume_path, map_location="cpu", weights_only=False)
+        # LambdaLR does not serialize its closure. Reconstruct the ORIGINAL schedule,
+        # batch order and model settings rather than silently using CLI defaults.
+        for key, value in ck["args"].items():
+            if key not in {"run", "resume", "resume_from", "init", "workers"}:
+                setattr(a, key, value)
+    if a.mb < a.bs or a.mb % a.bs:
+        ap.error("--mb must be a positive multiple of --bs")
+    if a.ckpt_every <= 0:
+        ap.error("--ckpt-every must be positive")
 
     import wandb
 
     dev = torch.device("cuda")
     torch.manual_seed(a.seed)
+    random.seed(a.seed)
+    np.random.seed(a.seed)
     torch.set_num_threads(1)  # CPU は Python の発行と読み込みだけ(他の作業と CPU を分ける)
     out = CKPT / a.run
     out.mkdir(parents=True, exist_ok=True)
@@ -139,23 +160,44 @@ def main():
         return 0.5 * (1.0 + math.cos(math.pi * min(1.0, (step - a.warmup) / max(1, total - a.warmup))))
 
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
-    state = dict(epoch=0, step=0, best=None, best_epoch=-1, history=[], baseline=None, bad=0)
-    if a.resume and (out / "latest.pt").exists():
-        ck = torch.load(out / "latest.pt", map_location=dev, weights_only=False)
+    state = dict(epoch=0, step=0, batch_in_epoch=0, best=None, best_epoch=-1,
+                 history=[], baseline=None, bad=0)
+    if ck is not None:
         P.load_state_dict(ck["params"])
         opt.load_state_dict(ck["opt"])
         sched.load_state_dict(ck["sched"])
         state = ck["state"]
-        print("resumed", {k: state[k] for k in ("epoch", "step", "best", "best_epoch")}, flush=True)
+        state.setdefault("batch_in_epoch",
+                         (state["step"] - state["epoch"] * steps_per_epoch) * (a.mb // a.bs))
+        manifest = [gid for _, _, gid in train.items]
+        if ck.get("train_gids", manifest) != manifest:
+            raise ValueError("resume training data/order differs from checkpoint")
+        if "rng" in ck:
+            random.setstate(ck["rng"]["python"])
+            np.random.set_state(ck["rng"]["numpy"])
+            torch.set_rng_state(ck["rng"]["torch"])
+            torch.cuda.set_rng_state_all(ck["rng"]["cuda"])
+        else:
+            print("legacy checkpoint has no RNG snapshot; predict is RNG-free and loader order is epoch-seeded",
+                  flush=True)
+        # Never replace historical best while continuing in a fresh directory.
+        historical_best = resume_path.parent / "best.pt"
+        if not (out / "best.pt").exists() and historical_best.exists():
+            save(out / "best.pt", **torch.load(historical_best, map_location="cpu", weights_only=False))
+        print("resumed", {k: state[k] for k in ("epoch", "step", "best", "best_epoch", "batch_in_epoch")}, flush=True)
 
     run = wandb.init(project="arc-whitebox-adam", name=a.run, id=a.run, resume="allow",
                      dir=os.environ.get("WANDB_DIR", "/kaggle/ext/wandb"),
-                     config=dict(vars(a), n_train=len(train), n_dev=len(dev_ds),
+                     config=dict({k: str(v) if isinstance(v, Path) else v for k, v in vars(a).items()},
+                                 n_train=len(train), n_dev=len(dev_ds),
                                  loss_scale=LOSS_SCALE, loss="final-layer MSE mean (+aux)"))
 
     def checkpoint(name):
         save(out / name, params=P.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(),
-             state=state, args=vars(a), export=P.export())
+             state=state, args={k: str(v) if isinstance(v, Path) else v for k, v in vars(a).items()},
+             export=P.export(), train_gids=[gid for _, _, gid in train.items],
+             rng=dict(python=random.getstate(), numpy=np.random.get_state(),
+                      torch=torch.get_rng_state(), cuda=torch.cuda.get_rng_state_all()))
 
     if state["baseline"] is None:
         t = time.time()
@@ -165,17 +207,25 @@ def main():
         print(f"baseline dev64 mse {base.mean():.4e} ({time.time()-t:.0f}s)", flush=True)
         run.log(dict(dev_mse=float(base.mean()), dev_ratio=1.0, epoch=0), step=0)
         checkpoint("epoch_000.pt")
+        if a.init:
+            # 既定値で基準を測ってから、別の run の学習済みパラメータで始める(最適化器は新規)
+            P.load_state_dict(torch.load(a.init, map_location=dev, weights_only=False)["params"])
+            init, _ = evaluate(P, dev_ds, a.val_bs, dev)
+            state["init_mse"] = float(init.mean())
+            print(f"init {a.init} dev64 mse {init.mean():.4e}", flush=True)
+            if init.mean() < state["best"]:
+                state["best"] = float(init.mean())
+                checkpoint("best.pt")
     base = np.array(state["baseline"]["mse"])
 
-    while state["epoch"] < a.epochs:
+    while state["epoch"] < a.epochs and state["bad"] < a.patience:
         epoch = state["epoch"]
         P.train()
         t0 = time.time()
-        start_step = state["step"] - epoch * steps_per_epoch
-        dl = loader(train, a.bs, True, a.seed * 1000 + epoch)
+        dl = loader(train, a.bs, True, a.seed * 1000 + epoch, workers=a.workers)
         acc_n, acc_loss, acc_final, it = 0, 0.0, 0.0, 0
         opt.zero_grad(set_to_none=True)
-        skip_batches = start_step * (a.mb // a.bs)
+        skip_batches = state["batch_in_epoch"]
         for bi, (W, truth, gid) in enumerate(dl):
             if bi < skip_batches:
                 continue
@@ -201,6 +251,7 @@ def main():
                 opt.zero_grad(set_to_none=True)
                 sched.step()
                 state["step"] += 1
+                state["batch_in_epoch"] = bi + 1
                 ex, _ = P.export()
                 log = dict(train_loss=acc_loss, train_final_mse=acc_final / acc_n, grad_norm=gnorm,
                            lr_scalar=sched.get_last_lr()[0], **{f"p_{k}": v for k, v in ex.items()},
@@ -227,6 +278,7 @@ def main():
         state["history"].append(rec)
         state["epoch"] = epoch + 1
         state["step"] = (epoch + 1) * steps_per_epoch
+        state["batch_in_epoch"] = 0
         if rec["dev_mse"] < state["best"]:
             state["best"], state["best_epoch"], state["bad"] = rec["dev_mse"], epoch + 1, 0
             checkpoint("best.pt")
