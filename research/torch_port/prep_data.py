@@ -38,13 +38,19 @@ def main():
         out = OUT / name
         out.mkdir(parents=True, exist_ok=True)
         ids, truth = [], []
+        rows = ds.with_format("numpy")  # 行を Python の list にせず読む(mlp_at の 100 倍以上速い)
         for i in range(len(ds)):
-            row = ds[i]
+            row = rows[i]
             gid = int(row["mlp_id"])
             path = out / f"w_{gid:04d}.npy"
-            if not path.exists():
+            if i == 0:
+                # 向きの確認: mlp.weights と同じ (depth, 入力, 出力) の並びであること
                 mlp = whestbench.mlp_at(ds, i)
-                weights = np.stack([np.asarray(w, dtype=np.float32) for w in mlp.weights])
+                ref = np.stack([np.asarray(w, dtype=np.float32) for w in mlp.weights])
+                if not np.array_equal(np.asarray(row["weights"], dtype=np.float32), ref):
+                    raise SystemExit("weights layout differs from whestbench.mlp_at")
+            if not path.exists():
+                weights = np.ascontiguousarray(np.asarray(row["weights"], dtype=np.float32))
                 tmp = path.with_suffix(f".{os.getpid()}.tmp.npy")
                 np.save(tmp, weights)
                 tmp.rename(path)
