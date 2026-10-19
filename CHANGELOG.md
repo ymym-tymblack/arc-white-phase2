@@ -10,6 +10,13 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ## Unreleased
 
+### 学習値を固定したresidual安全化（2026-10-19）
+
+- `research/candidates/adam1_residual_optimized.py` でλのscalar同期・定数配列をbroadcast viewへ変更し、Strassen作業viewを再利用、内部段の右側再構成を融合した。係数・補正器・資源配分は不変。
+- 同じ入力の対測定で全層bitwise一致、residual0.3515→0.3277秒、演算呼出し11428→11311。独立7形状検査は全件通過し、1024×16のresidual最大0.337秒、RSS最大3.38GiB。
+- 公式4GiB配列上限のclient/serverでもsetup1.062秒、residual0.206/0.188秒、保存済みインプロセス予測と完全一致。過去の安全検査失敗は保持する。
+- 学習値・資源配分の指紋を照合しつつ再学習候補へ同じ実装だけを移す生成器と、再現用smokeを追加。rootや提出アーカイブはまだ置き換えていない。
+
 ### Adam学習値の提出実装での再現確認（2026-10-19）
 
 - `adam1/best.pt`（epoch4、学習224網）を単一flopscope候補 `research/candidates/adam1_epoch004.py` へ書き出し、checkpoint・ソースのhashと実際の学習範囲を記録した。

@@ -67,6 +67,47 @@ rootの作業中 `estimator.py` や提出済みファイルを、この候補へ
 公式の時間gateを適用した本番スコア改善ではない。採用前にresidual低減が必要である。
 `whest validate` と対比較の回帰検査5件は通過したが、時間上限超過を打ち消す根拠にはしない。
 
+### 学習値を変えないresidual低減
+
+`research/candidates/adam1_residual_optimized.py` は上のepoch4候補に対する実装だけの変更。
+SHA256は `82363a9349ee938a0f451a34beec3ac2c5b4fc7032e70848db8bd65e3214c55e`。
+係数7個・補正器の重み・正規化・資源配分は変えていない。ASTで学習値の指紋も照合する。
+
+- λ特徴の生成を、Pythonの `float(lam)` と密な定数配列の作成からflopscopeのbroadcast viewへ変える。
+- Strassenの作業領域を切り出すviewを形状別に再利用する。保持するのは空間・viewだけで、入力依存の計算結果ではない。
+- Strassen再構成の内部段だけ、右側2ブロックに共通の加算をまとめてdispatchを1回減らす。
+  各要素での加減算順は保ち、最上段は従来どおり。flopscope外へ数値計算を移してはいない。
+
+同一のseed1・幅1024・深さ16で、全層予測はbitwise一致した。
+整数入力のStrassen積も正方形・非正方形・strided出力で厳密な整数参照と一致し、
+出力範囲外のsentinelを壊さなかった。記録は `results/adam1_residual_optimized_smoke.json`。
+
+| 同じ入力の対測定 | 変更前 | 実装最適化後 |
+|---|---:|---:|
+| residual秒 | 0.351497 | 0.327737 |
+| flopscope演算呼出し数 | 11428 | 11311 |
+| 課金FLOP | 535914583701 | 535914568341 |
+
+独立の静かな1スレッド7形状検査もすべて通過。1024×16のresidual最大0.337秒、
+全ケースの最大RSS3.38GiBで自己基準0.35秒・6GiBを満たした。
+記録は `results/adam1_residual_optimized_preflight.json`。
+過去の0.497/0.475秒の失敗は保持する。異なる時点の測定値だけを並べて低減率を出さず、
+実装変更の効果は上表の同条件の対測定で判断する。評価機での時間を保証するものではない。
+
+クライアント／サーバー方式でも公式4GiB配列上限で開発先頭網を2回実行した。
+setup1.062秒、residual0.206/0.188秒、wall45.81/42.98秒で、保存済みインプロセス予測との差は全層0。
+初回は1秒のsetup打ち切り後のview構築が予測へ入り、FLOP541562812053、
+2回目は535914721941だった。初回の実費を隠したり、既存の時間失敗を上書きしたりしていない。
+記録は `results/adam1_residual_optimized_client.json`。
+
+`research/torch_port/apply_residual_optimization.py` は、後続の再学習候補にもこの2つの
+private実装ブロックだけを移す。学習値・資源配分が変われば失敗し、凍結済み出力を上書きしない。
+最適化候補の生成結果が手で適用した上記ソースとbyte一致することも確認した。
+
+次の探索・学習・最終確認は `research/protocol_phase2_round2.json` に従う。
+公式full874〜999の126網は最終確認専用で、metadataのhashを事前に固定した。
+候補の優先順位は開発集合と安全検査だけで固定し、holdoutを見て入れ替えない。
+
 
 ## 2026-10-18 最終候補: 計算削減と鎖内ω補正
 
