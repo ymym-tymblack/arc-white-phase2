@@ -10,6 +10,12 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ## Unreleased
 
+### 係数固定の資源配分探索（2026-10-19）
+
+- destroy/repair焼きなまし24提案から5配分を開発16網、上位2配分を64網へ昇格し、exact flopscopeで完走。係数7個・補正器は固定、窓16・kmax3を維持した。
+- `age_old=5, rank_old=320` が固定epoch4に対し平均adjusted scoreを0.7550%低下。MSEのみさらに良い別配分はFLOP増でscore悪化のため不採用。
+- 探索は4プロセス×8スレッド、網単位cache・SA乱数状態・offline W&Bを保存。開発で選んだ有望配分であり、未知網での改善や時間適格性は別の凍結評価・安全検査で扱う。
+
 ### Adam継続・勾配監査（2026-10-19）
 
 - 元224網・元560step cosineを保ってepoch20まで継続し、epoch19を選択。開発PyTorch MSEはepoch4から追加0.3406%低下したが、計画上限停止であり収束の証明とはしない。追加198網はこの実験には未使用。

@@ -18,16 +18,16 @@ import json
 import math
 import multiprocessing as mp
 import os
-from pathlib import Path
 import random
 import sys
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "research"))
-import eval_mini
+import eval_mini  # noqa: E402
 
 BUDGET = 2**41
 DATASET = "/kaggle/ext/full_dev64"
@@ -151,8 +151,8 @@ def worker(job):
     started = time.monotonic()
     phase = "load"
     try:
-        import numpy as np
         import flopscope as flops
+        import numpy as np
         from whestbench import SetupContext
         if digest_bytes(Path(path).read_bytes()) != expected_sha:
             raise ValueError("Immutable source digest changed")
