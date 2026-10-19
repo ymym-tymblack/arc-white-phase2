@@ -1,0 +1,20 @@
+{
+  "checkpoint": "/kaggle/ext/torch_ckpt/adam1/best.pt",
+  "checkpoint_sha256": "995189ee9b3a3f582d078b4942c2cfa0ddcab7ec9e8e660f0e613795322888ee",
+  "epoch": 4,
+  "step": 112,
+  "train_gids": [0, 1],
+  "shape": [1, 16, 1024, 1024],
+  "objective": "final-layer MSE mean * 1e8",
+  "epsilons": [0.01, 0.003, 0.001],
+  "production_command": "research/gpu_env.sh research/torch_port/audit_gradients.py --checkpoint /kaggle/ext/torch_ckpt/adam1/best.pt --out results/adam1_epoch004_gradient_audit.json",
+  "diagnostic_command": "research/gpu_env.sh research/torch_port/audit_gradients.py --checkpoint /kaggle/ext/torch_ckpt/adam1/best.pt --out results/adam1_epoch004_gradient_audit_fp64_shadow.json --fp64-shadow",
+  "production_finite_difference_status": "FAIL at prespecified tolerance, not relabeled as pass",
+  "diagnosis": "FP32 finite differences are dominated by loss roundoff; identical-formula FP64 shadow passes initial 5%+0.003 tolerance for all 30 comparisons. Maximum FP64 relative error is 0.014743032283134937 and maximum absolute error is 0.0005222495112127343. A separate stricter 0.1%+1e-5 diagnostic does NOT pass all comparisons; the ReLU corrector is piecewise smooth. This does not certify derivatives of quantized FP32 outputs as smooth.",
+  "production_autograd_vs_shadow_max_absolute_difference": 0.00018488259305018268,
+  "checkpoint_vs_no_checkpoint": "bitwise identical losses and every parameter gradient on both networks",
+  "repeated_forward_backward": "bitwise identical; CPU/CUDA RNG states unchanged",
+  "static_review": "No detach in predict/_layer. State replaced rather than mutated. QR sketches are fixed next-layer weight columns; all QR paths connected to autograd. Export-only detach is intentional.",
+  "chain_math_changed": false,
+  "reports": ["results/adam1_epoch004_gradient_audit.json", "results/adam1_epoch004_gradient_audit_fp64_shadow.json", "results/adam1_epoch004_gradient_diagnosis.json", "results/adam1_resume_audit.json"]
+}
