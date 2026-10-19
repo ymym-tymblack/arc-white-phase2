@@ -111,6 +111,41 @@ private実装ブロックだけを移す。学習値・資源配分が変われ�
 件数を固定metadataから読む（既定の過去128網へ誤って流さない）。
 round2 metadataとソースのhash検査を実際に通し、不一致ソースは予測開始前に拒否することを確認した。
 
+### 元224網でのAdam継続と勾配監査
+
+`adam1/latest.pt` のepoch4・step112から、元のデータ順・Adam状態・cosine長560stepを復元して
+20epochまで継続した。追加198網はこの対照実験には混ぜていない。
+epochごとのcheckpointと10stepごとのatomic latest、offline W&Bを保存した。
+来歴は `research/torch_port/adam_convergence_record.json`、選択checkpointはepoch19・step532、
+SHA256は `a40cdd70fdb0c36918d251ab909aa0340790cb5b8352f644af96541ced7162bc`。
+
+| 同じ開発64網、PyTorchでの測定 | 最終層MSE平均 |
+|---|---:|
+| 提出済み4段版 | 2.1542634846e-8 |
+| epoch4 | 2.0652928277e-8 |
+| epoch19 | 2.0582581083e-8 |
+
+epoch4からの追加低下は0.3406%。最後6epochのMSE範囲は0.02282%で、
+epoch20は19より悪かった。patienceによる停止ではなく計画上限停止なので、収束を確定したとは呼ばない。
+明確な下降が残る場合用の低LR再始動は実装・synthetic smoke済みだが、今回は学習に使っていない。
+この表はGPU移植のMSEであり、新しいflopscope adjusted scoreや提出適格性の測定ではない。
+
+候補は `research/candidates/adam_epoch019.py`。安全化の転写版
+`research/candidates/adam_epoch019_residual_optimized.py` のSHA256は
+`726ea006b1829b1bac134de48a0e661a74da1741cd8c40952c996759b76515a5`。
+旧候補を再入力して同checkpointをexportしても、この転写版とbyte一致した。
+
+勾配監査はepoch4・学習網0/1で、損失を `最終層MSE×1e8` として実行した。
+中心差分のεは0.01/0.003/0.001、対象はb2・再生p1・feed・use31・補正器重みの単位方向。
+checkpointあり／なしと反復forward/backwardは損失・全勾配までbitwise一致し、CPU/CUDA RNGも不変だった。
+ただし**FP32中心差分は事前の許容差でも不合格**であり、合格へ読み替えていない。
+同じ式のFP64 shadowは5%＋絶対0.003の条件内だが、最大相対差1.4743%が残り、
+厳しい0.1%＋絶対1e-5の条件は全通過しない。ReLUを含む量子化・区分的な写像の滑らかさを保証しない。
+p1方向のdtype修正後も傾向は変わらず、detach・再計算の不整合は検出されなかった。
+数学的な `chain.py` の修正は行っていない。詳細は
+`research/torch_port/adam_gradient_audit_record.json` とそこから参照する実測JSON。
+したがって「Adam実装が悪い」「勾配は完全に正しい」「Muonなら改善する」のいずれも、この監査だけでは断定しない。
+
 
 ## 2026-10-18 最終候補: 計算削減と鎖内ω補正
 

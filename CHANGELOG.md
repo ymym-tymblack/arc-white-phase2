@@ -10,6 +10,12 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ## Unreleased
 
+### Adam継続・勾配監査（2026-10-19）
+
+- 元224網・元560step cosineを保ってepoch20まで継続し、epoch19を選択。開発PyTorch MSEはepoch4から追加0.3406%低下したが、計画上限停止であり収束の証明とはしない。追加198網はこの実験には未使用。
+- checkpoint有無・反復計算は全勾配までbitwise一致。一方FP32有限差分は不合格、高精度shadowにも最大約1.47%差が残る。数学的な鎖の修正やMuon優位の主張は行わない。
+- `train.py` のresumeで引数・データ順・batch位置・Adam・RNG・scheduler長を復元し、明示した資源設定を学習・評価・checkpointへ一貫適用。再学習済みソースの再exportにも対応した。
+
 ### 学習値を固定したresidual安全化（2026-10-19）
 
 - `research/candidates/adam1_residual_optimized.py` でλのscalar同期・定数配列をbroadcast viewへ変更し、Strassen作業viewを再利用、内部段の右側再構成を融合した。係数・補正器・資源配分は不変。
