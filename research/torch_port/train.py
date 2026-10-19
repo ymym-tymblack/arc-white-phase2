@@ -134,6 +134,8 @@ def main():
     ap.add_argument("--freeze", default="", help="comma list: scalars,corrector")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--resume-from", type=Path, help="continue a checkpoint in a distinct run directory")
+    ap.add_argument("--restart-epochs", type=int, default=0,
+                    help="after a completed plan, restart cosine for 1..40 extra epochs at 0.1x LR, keeping Adam")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--init", default="", help="checkpoint to warm-start parameters from")
     ap.add_argument("--config", type=Path, help="JSON resource overrides; window=16 and kmax=3 only")
@@ -149,7 +151,7 @@ def main():
         # LambdaLR does not serialize its closure. Reconstruct the ORIGINAL schedule,
         # batch order and model settings rather than silently using CLI defaults.
         for key, value in ck["args"].items():
-            if key not in {"run", "resume", "resume_from", "init", "workers"}:
+            if key not in {"run", "resume", "resume_from", "init", "workers", "restart_epochs"}:
                 setattr(a, key, value)
     if ck is not None:
         cfg, config_values = resource_config(ck.get("chain_config"))
@@ -161,6 +163,23 @@ def main():
         ap.error("--mb must be a positive multiple of --bs")
     if a.ckpt_every <= 0:
         ap.error("--ckpt-every must be positive")
+    phase = ck.get("phase") if ck is not None else None
+    if a.restart_epochs:
+        if ck is None or not 1 <= a.restart_epochs <= 40:
+            ap.error("--restart-epochs requires resume and 1..40 extra epochs")
+        if ck.get("phase") is not None:
+            ap.error("a run may have only one additional restart phase")
+        if ck["state"]["epoch"] != a.epochs or ck["state"]["bad"] >= a.patience:
+            ap.error("LR restart is only allowed after planned epochs, not an early-stopped run")
+        if (CKPT / a.run).resolve() == resume_path.parent.resolve():
+            ap.error("LR restart requires a distinct run directory")
+        phase = dict(resume_from=str(resume_path), start_epoch=a.epochs,
+                     start_step=ck["state"]["step"], extra_epochs=a.restart_epochs,
+                     lr_factor=0.1, patience=a.patience,
+                     previous_initial_lrs=[a.lr_scalar, a.lr_corr])
+        a.epochs += a.restart_epochs
+        a.lr_scalar *= 0.1
+        a.lr_corr *= 0.1
 
     import wandb
 
@@ -189,7 +208,12 @@ def main():
             p.requires_grad_(True)
     opt = torch.optim.Adam(groups)
     steps_per_epoch = math.ceil(len(train) / a.mb)
-    total = steps_per_epoch * a.epochs
+    if a.restart_epochs:
+        total = steps_per_epoch * a.restart_epochs
+    elif ck is not None:
+        total = ck.get("schedule_total_steps", steps_per_epoch * a.epochs)
+    else:
+        total = steps_per_epoch * a.epochs
 
     def lr_lambda(step):
         if step < a.warmup:
@@ -202,8 +226,16 @@ def main():
     if ck is not None:
         P.load_state_dict(ck["params"])
         opt.load_state_dict(ck["opt"])
-        sched.load_state_dict(ck["sched"])
+        if a.restart_epochs:
+            for group in opt.param_groups:
+                group["lr"] = group["initial_lr"] = (
+                    a.lr_scalar if group["name"] == "scalars" else a.lr_corr)
+            sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
+        else:
+            sched.load_state_dict(ck["sched"])
         state = ck["state"]
+        if a.restart_epochs:
+            state["bad"] = 0
         state.setdefault("batch_in_epoch",
                          (state["step"] - state["epoch"] * steps_per_epoch) * (a.mb // a.bs))
         manifest = [gid for _, _, gid in train.items]
@@ -227,13 +259,14 @@ def main():
                      dir=os.environ.get("WANDB_DIR", "/kaggle/ext/wandb"),
                      config=dict({k: str(v) if isinstance(v, Path) else v for k, v in vars(a).items()},
                                  n_train=len(train), n_dev=len(dev_ds), chain_config=config_values,
+                                 schedule_total_steps=total, phase=phase,
                                  loss_scale=LOSS_SCALE, loss="final-layer MSE mean (+aux)"))
 
     def checkpoint(name):
         save(out / name, params=P.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(),
              state=state, args={k: str(v) if isinstance(v, Path) else v for k, v in vars(a).items()},
              export=P.export(), train_gids=[gid for _, _, gid in train.items],
-             chain_config=config_values,
+             chain_config=config_values, schedule_total_steps=total, phase=phase,
              rng=dict(python=random.getstate(), numpy=np.random.get_state(),
                       torch=torch.get_rng_state(), cuda=torch.cuda.get_rng_state_all()))
 
