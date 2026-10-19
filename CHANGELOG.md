@@ -10,6 +10,15 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ## Unreleased
 
+### Adam学習値の提出実装での再現確認（2026-10-19）
+
+- `adam1/best.pt`（epoch4、学習224網）を単一flopscope候補 `research/candidates/adam1_epoch004.py` へ書き出し、checkpoint・ソースのhashと実際の学習範囲を記録した。
+- PyTorchとflopscopeの全層予測を開発4網で照合し、最大絶対差4.95e-6・最終層MSE相対差0.208%以内を確認した。
+- 同一開発64網で提出済み4段版と比較し、FLOP不変で平均adjusted scoreが5.250894e-9から5.033271e-9へ4.14%低下、61/64網で改善した。未知MLP・本番スコアの改善確認とは区別する。
+- 網別checkpoint付き対比較ハーネスを追加し、MSEだけでなくFLOPと0.1床を含むスコア・信頼区間を計算する。比較網の欠落・重複・予測失敗を黙って除外しない回帰検査5件を通過した。
+- rootの作業中ファイルや提出済み版は置き換えず、未使用holdoutと実提出は行っていない。
+- 候補単独の安全検査は1024×16でresidual0.497/0.475秒となり0.4秒上限を超過。精度改善の再現と提出適格性を分け、現状の候補は提出非推奨として失敗結果も保持する。
+
 ### この作業ツリーの最終候補（2026-10-18）
 
 - 大きな因子化行列積をStrassen–Winogradで計算し、球面入力の動径分離・(3,1)二項則・学習済みω補正器を統合。候補と比較条件を `research/frozen_phase2_final.json` に固定した。

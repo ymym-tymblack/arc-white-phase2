@@ -12,6 +12,62 @@ uv run whest run --estimator estimator.py \
 uv run whest package --estimator estimator.py --output submission.tar.gz
 ```
 
+## 2026-10-19 Adam checkpointのflopscope再現確認
+
+API制限で中断した学習担当から `adam1/best.pt` を引き継ぎ、epoch4・step112を固定した。
+実際の学習は224網（公式full0〜63、264〜423）、選択用開発は64〜127。
+追加の424〜621番は、このcheckpointでは学習に使っていない。
+来歴とSHA256は `research/torch_port/adam1_epoch004_export.json` に記録した。
+
+`export_candidate.py` で係数7個と補正器の重み・正規化を単一ファイルへ埋め込んだ。
+候補は `research/candidates/adam1_epoch004.py`、元は提出済み4段版
+`research/frozen_phase2/combined.py` であり、編集中のrootの5段試作は混ぜていない。
+補正器の適用条件も学習後の二項則係数に合わせる。提出実行にPyTorchやcheckpointは不要。
+
+開発先頭4網で、checkpointのPyTorch予測と候補のflopscope予測を照合した。
+全層の最大絶対差は4.9472e-6、最終層MSEの相対差最大0.2079%で、
+許容値2e-5・0.5%以内だった（`results/adam1_epoch004_port_verification.json`）。
+`verify_port.py` は学習済みcheckpointを指定でき、許容差を超えれば非ゼロで終了する。
+export時の学習範囲の記載も、固定の広い範囲ではなくcheckpointの実際の設定へ修正した。
+
+対比較は `eval_flopscope_pair.py` で同一開発64網・120秒上限・FLOP予算を変えずに行い、
+網単位の成功・失敗をJSONLに保存する。照合済みの候補4網はソースhashを確認して再利用する。
+`compare_dev.py` は最終層MSEに加えて課金FLOPと0.1の床からadjusted scoreを算出し、
+対の比・bootstrap区間を出す。比較網の不一致・重複・失敗を黙って除外しない。
+PyTorchでの学習改善率を、別集合の提出済みスコアへ直接掛けた値は新スコアと呼ばない。
+
+開発64網で両ソースをflopscope実行し、各64件の予測をすべて取得した。
+今回の比較は元の4段版同士で、Strassen5段による仮の削減率は加えていない。
+
+| 同じ開発64網 | 最終層MSE平均 | C/B平均 | adjusted score平均 |
+|---|---:|---:|---:|
+| 提出済み4段版 | 2.154604e-8 | 0.2437057623 | 5.250894e-9 |
+| Adam epoch4候補 | 2.065307e-8 | 0.2437057623 | 5.033271e-9 |
+
+**提出用と同じflopscope実装でも、平均adjusted scoreが4.1445%低下した。**
+MSE・adjusted scoreとも61/64網で改善。平均scoreの比は0.958555、
+網単位の対bootstrap95%区間は[0.952819, 0.964446]。
+網ごとのscore比の平均は0.958787（区間[0.953201, 0.964428]）。
+課金FLOPは両版で同じであり、改善源は学習した係数・補正器による精度向上だった。
+記録は `results/dev64_adam1_epoch004_pair.json`（網別履歴は同名JSONL）、
+集計は `results/dev64_adam1_epoch004_comparison.json`。
+例外・予算超過・非有限値は両版とも0件で、予測wallは全件120秒以内だった。
+候補の照合済み4網は600秒上限の診断ダンプから再利用したが、実測wallはすべて90秒未満。
+
+これはcheckpoint選択に使った開発集合での再現確認であり、未知MLPへの改善率の保証ではない。
+並列時のresidualは候補最大0.884秒であり、この比較自体が公式0.4秒gateの安全証明にはならない。
+単独実行の安全検査と、事前登録した未使用holdoutでの最終確認は別に扱う。
+rootの作業中 `estimator.py` や提出済みファイルを、この候補へ自動で置き換えていない。
+
+**そのままの提出は非推奨。** 単独1スレッドの7形状検査では有限性・形状・FLOP・wall・
+メモリは全件通過したが、1024×16のresidualが0.4970/0.4753秒で公式0.4秒上限を超えた。
+他の5ケースは通過、最大RSSは3.405GiB（`results/adam1_epoch004_preflight.json`）。
+良い測定だけを選ぶ再検査は行わず、この失敗を保持する。
+したがって、今回確認したのは「同じ開発網での算術的な精度・FLOPスコア改善」であり、
+公式の時間gateを適用した本番スコア改善ではない。採用前にresidual低減が必要である。
+`whest validate` と対比較の回帰検査5件は通過したが、時間上限超過を打ち消す根拠にはしない。
+
+
 ## 2026-10-18 最終候補: 計算削減と鎖内ω補正
 
 提出の基準は自作の `22e1dc1` 版であり、公開V29への置き換えではない。
