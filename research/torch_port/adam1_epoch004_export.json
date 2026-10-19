@@ -1,0 +1,28 @@
+{
+  "run": "adam1",
+  "selected_epoch": 4,
+  "optimizer_step": 112,
+  "checkpoint": "/kaggle/ext/torch_ckpt/adam1/best.pt",
+  "checkpoint_sha256": "995189ee9b3a3f582d078b4942c2cfa0ddcab7ec9e8e660f0e613795322888ee",
+  "source": "research/frozen_phase2/combined.py",
+  "source_sha256": "f13be0e5b38a53e78acf181642379fdcedac388ddde0bdb38ebe0dbfd9e8ac92",
+  "candidate": "research/candidates/adam1_epoch004.py",
+  "candidate_sha256": "7456bdf9d33f16b864122ce043a86b59ff8bb4deb095176f96abd46e549e0b9a",
+  "train_sets": [
+    "train64",
+    "train160"
+  ],
+  "train_official_rows": [
+    "0-63",
+    "264-423"
+  ],
+  "train_networks": 224,
+  "development_official_rows": "64-127",
+  "selected_torch_development_mse": 2.0652928277303744e-08,
+  "verification": "results/adam1_epoch004_port_verification.json",
+  "notes": [
+    "追加198網はこのcheckpointでは未使用。",
+    "最終holdoutはこの再現確認で読まない。",
+    "候補はStrassen4段の固定済み版を元にし、未検証のroot変更は含めない。"
+  ]
+}

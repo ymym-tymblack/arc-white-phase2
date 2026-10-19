@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -28,6 +29,8 @@ def main():
     ap.add_argument("--batch", type=int, default=1)
     ap.add_argument("--source", default=str(ROOT / "research/frozen_phase2/combined.py"))
     ap.add_argument("--no-sym", action="store_true")
+    ap.add_argument("--checkpoint", type=Path, help="照合する学習済みparamsを読み込む")
+    ap.add_argument("--out", type=Path, help="照合結果とソースhashを保存する")
     a = ap.parse_args()
     lo, hi = (int(x) for x in a.indices.split("-"))
     idxs = list(range(lo, hi + 1))
@@ -35,6 +38,9 @@ def main():
     truth = np.load(DATA / "dev64/truth.npy")
     dev = torch.device("cuda")
     P = chain.ChainParams(a.source).to(dev)
+    if a.checkpoint is not None:
+        ck = torch.load(a.checkpoint, map_location=dev, weights_only=False)
+        P.load_state_dict(ck["params"])
     cfg = chain.ChainConfig
     cfg.symmetrize_gram = not a.no_sym
     out = []
@@ -62,7 +68,20 @@ def main():
     print("peak_mem_GiB", torch.cuda.max_memory_allocated() / 2**30)
     ok = all(abs(r["rel"]) <= 0.005 and r["maxdiff_all"] <= 2e-5 for r in out)
     print("PASS" if ok else "FAIL", flush=True)
+    if a.out is not None:
+        report = dict(
+            source=a.source,
+            source_sha256=hashlib.sha256(Path(a.source).read_bytes()).hexdigest(),
+            checkpoint=str(a.checkpoint) if a.checkpoint else None,
+            checkpoint_sha256=(
+                hashlib.sha256(a.checkpoint.read_bytes()).hexdigest() if a.checkpoint else None),
+            reference=str(a.ref), symmetrize_gram=cfg.symmetrize_gram,
+            max_abs_tolerance=2e-5, relative_mse_tolerance=0.005, per=out, passed=ok,
+        )
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(json.dumps(report, indent=2) + "\n")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
