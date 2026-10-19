@@ -1,0 +1,76 @@
+{
+  "source": "research/candidates/adam1_epoch004.py",
+  "source_sha256": "7456bdf9d33f16b864122ce043a86b59ff8bb4deb095176f96abd46e549e0b9a",
+  "command": "uv run --with wandb python research/resource_search/search.py run --cpu-released --workers 4 --threads 8 --out results/resource_search_adam1_seed2119_20261019.json",
+  "seed": 2119,
+  "objective": "mean network final-layer MSE * max(0.1, FLOPs / 2**41)",
+  "energy": "log(adjusted score)",
+  "dataset": "/kaggle/ext/full_dev64",
+  "dataset_metadata_sha256": "7e150420a9a2487de8c282999ff247910cfcae5659fd509c7bf91938709436f7",
+  "proposals_completed": 24,
+  "dev16_promotions": 5,
+  "dev64_finalists": 2,
+  "failed_proposals": 0,
+  "learned_coefficients_fixed": {
+    "k31_two_term": 2.912584066390991,
+    "regen_p0": 1.4718437194824219,
+    "regen_p1": 1.290607213973999,
+    "regen_p2": 1.3319518566131592,
+    "regen_p3": 1.5320236682891846,
+    "regen_feed": 0.7700434923171997,
+    "regen_use31": 0.6013506054878235
+  },
+  "corrector_ast_sha256": "470b333c6a509fa29620faa73ad73b926737c57ff50bf7a69c045975ea242e6b",
+  "fixed_parameter_sha256": "c3c189be0049d737c789c88c5ad331713fad9e7ede16eef568d7c8960112ad65",
+  "recommended_kwargs": {
+    "age_old": 5,
+    "rank_old": 320
+  },
+  "effective_resources": {
+    "age_old": 5,
+    "rank_old": 320,
+    "window": 16,
+    "iik_rank": 4,
+    "k3leg_rank": 4,
+    "kmax": 3,
+    "strassen_levels": 4,
+    "strassen_levels_old": 4
+  },
+  "baseline_dev64": {
+    "reused_from": "results/dev64_adam1_epoch004_pair.json",
+    "adj": 5.033271334104084e-09,
+    "mse": 2.0653066578538926e-08,
+    "cb": 0.24370576234150576
+  },
+  "selected_dev64": {
+    "adj": 4.9952696347464414e-09,
+    "mse": 2.0573999313498834e-08,
+    "cb": 0.24279526603868362,
+    "max_ops": 11865,
+    "max_wall_loaded_s": 72.78851385699818,
+    "max_residual_loaded_s": 0.6765414183610119,
+    "ratio_of_means": 0.9924499005050347,
+    "ratio_of_means_ci95": [0.9852689664065132, 0.9994579769467753],
+    "improved_networks": 37,
+    "networks": 64,
+    "paired_bootstrap_draws": 10000,
+    "paired_bootstrap_seed": 2119
+  },
+  "runner_up_dev64": {
+    "kwargs": {
+      "age_old": 5,
+      "iik_rank": 6,
+      "rank_old": 320,
+      "strassen_levels_old": 3
+    },
+    "adj": 5.086619411823298e-09,
+    "mse": 2.0545364075506323e-08,
+    "cb": 0.24757878934951805,
+    "ratio_of_means": 1.0105990863949141
+  },
+  "report": "results/resource_search_adam1_seed2119_20261019.json",
+  "report_sha256": "a868e7d4c8fb51f4ed8f634c071d92f2412477c0c271bf769c09b8a172de7cd1",
+  "checkpoint_directory": "/kaggle/ext/resource_search/4b463a552f44263e0454",
+  "wandb_offline_run": "/kaggle/ext/wandb/wandb/offline-run-20261019_132446-01ttg346",
+  "scope_note": "Development-selected allocation only. No holdout read. Final quiet residual safety belongs to the integration owner. Loaded residual is diagnostic, not a safety pass. Window=16 and kmax=3 were fixed by integration-owner instruction for faithful torch retraining."
+}
