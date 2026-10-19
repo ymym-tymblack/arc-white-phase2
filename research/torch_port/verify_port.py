@@ -17,6 +17,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chain  # noqa: E402
+from train import resource_config  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = Path("/kaggle/ext/torch_data")
@@ -38,10 +39,11 @@ def main():
     truth = np.load(DATA / "dev64/truth.npy")
     dev = torch.device("cuda")
     P = chain.ChainParams(a.source).to(dev)
+    ck = None
     if a.checkpoint is not None:
         ck = torch.load(a.checkpoint, map_location=dev, weights_only=False)
         P.load_state_dict(ck["params"])
-    cfg = chain.ChainConfig
+    cfg, config_values = resource_config(ck.get("chain_config") if ck is not None else None)
     cfg.symmetrize_gram = not a.no_sym
     out = []
     for s in range(0, len(idxs), a.batch):
@@ -76,6 +78,7 @@ def main():
             checkpoint_sha256=(
                 hashlib.sha256(a.checkpoint.read_bytes()).hexdigest() if a.checkpoint else None),
             reference=str(a.ref), symmetrize_gram=cfg.symmetrize_gram,
+            chain_config=config_values,
             max_abs_tolerance=2e-5, relative_mse_tolerance=0.005, per=out, passed=ok,
         )
         a.out.parent.mkdir(parents=True, exist_ok=True)

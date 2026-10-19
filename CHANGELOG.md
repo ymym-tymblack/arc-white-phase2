@@ -10,6 +10,14 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ## Unreleased
 
+### 422網の再学習・安全化・最終候補凍結（2026-10-19）
+
+- 選択したage5/rank320だけをepoch19から新規Adamで422網に再学習し、epoch16を選択。元224網の継続実験と区別してcheckpoint・W&B・初期値の来歴を保存した。
+- 422網の最後の6網が8分母で過小重みになる勾配蓄積を修正。実6網の比較で補正後gradは最大絶対差1.733e-7、元224網への影響なしを確認した。
+- 再学習候補の深さ24は最初residual0.419秒で失敗。学習値を変えずペア係数のstack/gatherを削減し、同一入力で全層bitwise一致、7ケース全通過へ修正した。過去の失敗は保持する。
+- exact開発64網では平均adjusted scoreが提出済み版より5.5362%低下、60/64網で改善。SDK隔離実行・4GiB client/server・GPU照合も通過し、優先候補と比較2候補を最終集合の予測前に固定した。
+- `export_candidate.py` はcheckpoint資源設定・初期学習と現在学習の注記を整合し、`verify_port.py` も保存資源を復元する。`apply_residual_optimization.py` はペアpackingをAST確認して転写し、安全化済み入力への適用も不変とした。
+
 ### 係数固定の資源配分探索（2026-10-19）
 
 - destroy/repair焼きなまし24提案から5配分を開発16網、上位2配分を64網へ昇格し、exact flopscopeで完走。係数7個・補正器は固定、窓16・kmax3を維持した。

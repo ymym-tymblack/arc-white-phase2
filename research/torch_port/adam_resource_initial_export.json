@@ -1,0 +1,19 @@
+{
+  "checkpoint": "/kaggle/ext/torch_ckpt/adam_resource_age5_rank320/initial.pt",
+  "checkpoint_sha256": "a1735d32d508e4d8cdfd99f7abb69fe550fe130294c2682347055babed111b1e",
+  "source": "research/candidates/adam_resource_initial_optimized.py",
+  "source_sha256": "417884e4ca80ec80fdf47c19eea48198c0c824606c5cc9e07a77a78a1d634f11",
+  "fixed_parameter_sha256": "724f86823ee10dc0ea9f9af722896a85a2d27191d10d42588adb5e4e2c8dcb03",
+  "same_learned_parameters_as": "research/candidates/adam_epoch019_residual_optimized.py",
+  "resource_config": {
+    "age_old": 5,
+    "rank_old": 320,
+    "window": 16,
+    "iik_rank": 4,
+    "k3leg_rank": 4,
+    "kmax": 3,
+    "strassen_levels": 4,
+    "strassen_levels_old": 4
+  },
+  "purpose": "再学習前の同じ学習値で資源配分だけの効果を分離。最終holdoutの追加候補ではない。"
+}

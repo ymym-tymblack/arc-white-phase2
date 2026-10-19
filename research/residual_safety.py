@@ -29,6 +29,8 @@ def main():
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--width", type=int, default=1024)
+    parser.add_argument("--depth", type=int, default=16)
     args = parser.parse_args()
     import flopscope as flops
     import flopscope.numpy as fnp
@@ -60,13 +62,13 @@ def main():
             raise ValueError("Strassen wrote outside the strided output")
         exact.append(dict(shape=[m, k, p], levels=levels, exact=True))
     budget = 2**41
-    mlp = build_mlp(1024, 16, seed=1)
+    mlp = build_mlp(args.width, args.depth, seed=1)
     predictions, runs = [], []
     for model in (old, new):
         estimator = model.Estimator()
         started = time.perf_counter()
-        estimator.setup(SetupContext(width=1024, depth=16, flop_budget=budget,
-                                      api_version="2.0", submission_dir=str(ROOT), seed=0))
+        estimator.setup(SetupContext(width=args.width, depth=args.depth, flop_budget=budget,
+                                     api_version="2.0", submission_dir=str(ROOT), seed=0))
         setup = time.perf_counter() - started
         with flops.BudgetContext(flop_budget=budget, wall_time_limit_s=120.0, quiet=True) as ctx:
             prediction = estimator.predict(mlp, budget)
@@ -77,6 +79,7 @@ def main():
         print(json.dumps(runs[-1]), flush=True)
     difference = float(np.max(np.abs(predictions[0] - predictions[1])))
     report = dict(source_audits=audits, integer_cases=exact, runs=runs,
+                  shape=[args.depth, args.width],
                   max_abs_prediction_difference=difference,
                   bitwise_equal=bool(np.array_equal(*predictions)),
                   passed=difference <= 1e-5)

@@ -42,13 +42,13 @@ def _replace_attributes(text, attrs):
         if not selected:
             continue
         if selected != set(names) or found & selected:
-            raise ValueError("Unexpected grouped or duplicate learned attribute assignment")
+            raise ValueError("Unexpected grouped or duplicate estimator attribute assignment")
         found.update(selected)
         tail = source_lines[node.end_lineno - 1].encode()[node.end_col_offset:].decode()
         replacement = "\n".join(f"    {name} = {attrs[name]!r}" for name in names) + tail
         replacements.append((node.lineno, node.end_lineno, replacement))
     if found != set(attrs):
-        raise ValueError(f"Missing learned attributes: {set(attrs) - found}")
+        raise ValueError(f"Missing estimator attributes: {set(attrs) - found}")
     lines = text.splitlines(keepends=True)
     for start, end, replacement in sorted(replacements, reverse=True):
         lines[start - 1:end] = [replacement]
@@ -96,13 +96,24 @@ def main():
                     text, re.S)
     hist = state.get("history", [])
     best = next((h for h in hist if h["epoch"] == state.get("best_epoch")), None)
+    best_mse = best["dev_mse"] if best else state["best"]
+    epoch_note = "（追加学習前のwarm-start値）" if state.get("best_epoch") == 0 else ""
     note = (f"# research/torch_port/train.py で鎖ごと Adam で再当てはめ。\n"
             f"# train_sets={ck['args']['train_sets']}、開発64〜127で選択。\n"
             f"# run={ck['args']['run']} epoch={state.get('best_epoch')} "
-            f"dev64_torch_mse={best['dev_mse'] if best else float('nan'):.4e}。")
+            f"dev64_torch_mse={best_mse:.4e}{epoch_note}。")
     text = re.sub(r"^# research/torch_port/train.py で鎖ごと Adam で再当てはめ。\n"
                   r"# train_sets=[^\n]*\n", "", text, flags=re.M)
     text = sub_once(r"^# run=[^\n]*$", note, text, re.M)
+    for old, new in (
+        ("# 途中の層の事前活性化の標準化 κ4 対角 ω について、(真値 − 鎖)からネットワーク・層ごとの平均を",
+         "# 初期補正器の事前学習: κ4 対角 ω の(真値 − 鎖)からネットワーク・層ごとの平均を"),
+        ("# 導出値は b2=1。既定値は公式 full 0〜15 番(burned)で 2.5〜4.0 を走査して選んだ。0 なら無効。",
+         "# 導出値は b2=1。現在値は学習済みcheckpointから復元。学習範囲は上のrun記録を参照。0なら無効。"),
+        ("# (幅1024・深さ16、球面入力・(3,1)二項則つきの鎖)だけで使う。開発64網で MSE 比 0.959。",
+         "# (幅1024・深さ16、球面入力・(3,1)二項則つきの鎖)だけで使う。現在の検証はresearch/README.mdを参照。"),
+    ):
+        text = text.replace(old, new)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(text)
     print("wrote", a.out, attrs)

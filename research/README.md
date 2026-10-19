@@ -100,9 +100,11 @@ setup1.062秒、residual0.206/0.188秒、wall45.81/42.98秒で、保存済みイ
 2回目は535914721941だった。初回の実費を隠したり、既存の時間失敗を上書きしたりしていない。
 記録は `results/adam1_residual_optimized_client.json`。
 
-`research/torch_port/apply_residual_optimization.py` は、後続の再学習候補にもこの2つの
-private実装ブロックだけを移す。学習値・資源配分が変われば失敗し、凍結済み出力を上書きしない。
-最適化候補の生成結果が手で適用した上記ソースとbyte一致することも確認した。
+`research/torch_port/apply_residual_optimization.py` は2つのprivate実装ブロックを移し、
+後述のペア係数packingもASTで対象文を確認して置き換える。
+学習値・資源配分が変われば失敗し、凍結済み出力を上書きしない。
+初期の2ブロック転写版は上記ソースとbyte一致を確認した。packing追加後も、
+epoch16候補について手で適用した版と生成器の出力がbyte一致することを確認した。
 
 次の探索・学習・最終確認は `research/protocol_phase2_round2.json` に従う。
 公式full874〜999の126網は最終確認専用で、metadataのhashを事前に固定した。
@@ -202,6 +204,98 @@ seed2119で24提案、開発4網でscreenし、5候補を16網へ、上位2候�
 実測は `results/resource_search_adam1_seed2119_20261019.json`。
 探索中のresidual最大0.6765秒はCPU競合込みの診断値であり、安全検査の代わりにはしない。
 この1配分だけを次の再学習へ渡し、確定後の係数に対して安全化・実装照合をやり直す。
+
+### 選択した1配分だけを422網で再学習
+
+age5・rank320だけを、epoch19の値からwarm-startし新規Adamで当てはめた。
+学習網は公式full0〜63と264〜621の422網、選択は開発64〜127。
+元224網の継続実験とは別runであり、追加データ・新しいAdam状態・追加更新をまとめた再学習の実験である。
+初期paramsはepoch19とbitwise一致し、optimizer状態は空から開始した。
+全epoch・initial・10stepごとのlatestとoffline W&Bを保存している。
+
+| 同じage5・rank320、PyTorch開発64網 | 最終層MSE平均 |
+|---|---:|
+| 追加学習前initial | 2.0506596888e-8 |
+| 選択epoch16 | 2.0424608737e-8 |
+
+追加低下は0.3998%。epoch20で計画上限に達し、最後4epochは改善しなかった。
+patience5による停止でも数学的な収束証明でもない。追加LR再始動はしていない。
+checkpointはepoch16・step848、
+SHA256 `c80dc91bc881ca5331d5e52d272595e7a45472ecee51f16b68fe22052fc6c6bd`。
+来歴は `research/torch_port/adam_resource_age5_rank320_record.json`。
+
+422を8網ずつ処理すると最後が6網になる。従来の8分母ではその更新の損失・勾配が
+6/8に縮むため、clip前に蓄積gradへ8/6を掛け、6網の平均へそろえた。
+実1024×16の6訓練網を4+2に分割して比較し、補正後は全パラメータで許容差内、
+最大絶対差1.733e-7だった。実学習の最後の6網でも全Adam counterがstep1060へ到達した。
+8で割り切れる元224網の対照実験には、この修正の影響はない。
+
+再学習前の同じ資源対照もexact flopscopeで64網測定した。
+`research/candidates/adam_resource_initial_optimized.py` はepoch19と学習値の指紋が一致する。
+そのscoreは4.9780359235e-9、資源変更前epoch19比0.99225548（0.7745%低下）、38/64網で改善。
+記録は `results/dev64_adam_resource_initial_pair.json` と同prefixの `_comparison.json`、
+来歴は `research/torch_port/adam_resource_initial_export.json`。
+これにより、配分変更とその後の再学習の寄与を混同せず比較できる。
+
+### 再学習候補の深さ24で見つかったresidual超過と同値packing
+
+最初の転写版 `adam_resource_age5_rank320_epoch016_residual_optimized.py` は、
+採点形状の1024×16では自己基準を満たしたが、1024×24でresidual0.419秒となり失敗した。
+`results/adam_resource_epoch016_preflight.json` を保持し、良い時刻だけを取り直してはいない。
+学習値・資源配分を固定して、平均・二乗出力のHermite係数を並べる部分だけを変更した。
+既に個別の行viewがある `c` は1回のstackで作り、中間の2表面tensorを作ってから
+3表面をadvanced indexingする代わりに、必要な3表面を直接stackする。
+演算は引き続きflopscopeで実施し、FLOPの実費も課金される。
+
+| 同じseed1・1024×24の対測定 | 変更前 | packing変更後 |
+|---|---:|---:|
+| residual秒 | 0.411056 | 0.386258 |
+| flopscope演算呼出し数 | 10822 | 10776 |
+| 課金FLOP | 1565250146191 | 1565246330767 |
+
+この対測定は全層bitwise一致。`results/adam_resource_epoch016_packed_smoke24.json` に記録した。
+修正版の独立7ケース検査は全通過し、1024×16はresidual最大0.333秒、
+1024×24は0.393秒、RSS最大3.41GiBだった。
+記録は `results/adam_resource_epoch016_packed_preflight.json`。
+採点形状以外の深さ24は0.4秒までの余裕が小さく、評価機での時間を保証しない。
+
+候補は `research/candidates/adam_resource_age5_rank320_epoch016_residual_packed.py`、
+SHA256 `aeff244da81e269f3b6efd6cc4a9a0af4ac10ba9c33d6e28d30f21c9df8b4dbf`。
+GPUと全層予測を開発4網で照合し、最大絶対差3.577e-6・最終層MSE相対差最大0.0498%で通過した。
+`verify_port.py` はcheckpointの資源設定も復元し、既定age6で誤検証しない。
+SDK隔離subprocessで開発先頭網を実行し、wall33.26秒・residual0.3268秒、失敗分類すべて0だった。
+公式4GiB配列上限のclient/serverでもsetup1.043秒、residual最大0.182秒、
+保存済みインプロセス予測との差0で2回完走した。
+記録は `results/adam_resource_epoch016_port_verification.json`、同prefixの `_subprocess.json` と `_client.json`。
+生成器はraw sourceからこの修正版をbyte一致で再生成でき、安全化済み入力からの生成も不変だった。
+変更した研究ツール4本のRuffは通過。凍結候補の単独実行用importに継承されたI001 2件は、
+推論に無関係な整形変更としてソースhashを変えないため、今回は意図的に未変更とした。
+
+### 開発実スコアをそろえた最終候補の凍結
+
+再学習版も同じ開発64網でexact flopscope実行し、全64件が120秒以内で完走、
+例外・予算超過・非有限値は0だった。比較前の対照と照合済み4網だけを検証付きで再利用した。
+
+| 開発64網での段階 | 最終層MSE平均 | C/B平均 | adjusted score平均 |
+|---|---:|---:|---:|
+| 提出済み版 | 2.1546037940e-8 | 0.2437057623 | 5.2508935999e-9 |
+| 224網epoch19・既定配分 | 2.0585846665e-8 | 0.2437057554 | 5.0168893097e-9 |
+| 同じepoch19の値・age5/rank320 | 2.0503019478e-8 | 0.2427952591 | 4.9780359235e-9 |
+| 422網epoch16・age5/rank320・同値packing | 2.0429622988e-8 | 0.2427941275 | 4.9601924862e-9 |
+
+再学習前の同じ配分からは0.3584%低下、50/64網で改善した。
+ここには小さいpackingのFLOP削減も含むため、すべてをAdamによる精度改善とは呼ばない。
+提出済み版に対しては平均score比0.94463778（5.5362%低下）、60/64網で改善。
+対bootstrap95%区間は平均scoreの比で[0.934971,0.954220]、
+網ごとの比の平均で[0.935538,0.954426]。
+記録は `results/dev64_adam_resource_epoch016_pair.json` と同prefixの `_comparison.json`。
+これは候補選択に使用した開発集合での測定であり、本番スコアや未知網への改善保証ではない。
+
+`research/frozen_phase2_round2.json` に提出済み基準・224網候補・422網候補の
+パス・SHA256・空の上書き属性・検査記録・開発scoreを固定した。
+優先候補は開発scoreと安全性から422網epoch16版に確定し、holdoutを見て入れ替えない。
+固定後に公式full874〜999の126網で、基準と2候補をそれぞれ一度だけ評価する。
+rootの旧5段試作とinitial対照はこの最終候補に含めない。実提出はユーザーが行う。
 
 
 ## 2026-10-18 最終候補: 計算削減と鎖内ω補正
