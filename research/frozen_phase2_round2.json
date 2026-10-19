@@ -1,0 +1,76 @@
+{
+  "created_utc": "2026-10-19T21:20:58.048999+00:00",
+  "protocol": "research/protocol_phase2_round2.json",
+  "protocol_sha256": "9472def0e531a7e4ea89390369dbce094ef5e034c6dea8e7db32b3db8949585d",
+  "primary_candidate": "resource422",
+  "primary_selection": "開発64網の平均adjusted scoreが小さく、事前の安全検査・client/inprocess照合を満たした候補。holdoutを見て入れ替えない。",
+  "candidates": {
+    "submitted": {
+      "path": "research/frozen_phase2/combined.py",
+      "sha256": "f13be0e5b38a53e78acf181642379fdcedac388ddde0bdb38ebe0dbfd9e8ac92",
+      "kwargs": {}
+    },
+    "adam224": {
+      "path": "research/candidates/adam_epoch019_residual_optimized.py",
+      "sha256": "726ea006b1829b1bac134de48a0e661a74da1741cd8c40952c996759b76515a5",
+      "kwargs": {}
+    },
+    "resource422": {
+      "path": "research/candidates/adam_resource_age5_rank320_epoch016_residual_packed.py",
+      "sha256": "aeff244da81e269f3b6efd6cc4a9a0af4ac10ba9c33d6e28d30f21c9df8b4dbf",
+      "kwargs": {}
+    }
+  },
+  "comparisons": {
+    "adam_vs_submitted": [
+      "adam224",
+      "submitted"
+    ],
+    "resource_vs_submitted": [
+      "resource422",
+      "submitted"
+    ],
+    "resource_vs_adam": [
+      "resource422",
+      "adam224"
+    ]
+  },
+  "execution": {
+    "workers": 4,
+    "threads": 8
+  },
+  "development_scores": {
+    "submitted": 5.250893599873644e-09,
+    "adam224": 5.016889309653772e-09,
+    "resource422": 4.960192486180441e-09
+  },
+  "safety_reports": {
+    "adam224": [
+      "results/adam_epoch019_residual_optimized_preflight.json",
+      "results/adam_epoch019_residual_optimized_client.json",
+      "results/adam_epoch019_port_verification.json"
+    ],
+    "resource422": [
+      "results/adam_resource_epoch016_packed_preflight.json",
+      "results/adam_resource_epoch016_client.json",
+      "results/adam_resource_epoch016_subprocess.json",
+      "results/adam_resource_epoch016_port_verification.json"
+    ]
+  },
+  "checkpoints": {
+    "adam224": {
+      "path": "/kaggle/ext/torch_ckpt/adam1_continued_audit/best.pt",
+      "sha256": "a40cdd70fdb0c36918d251ab909aa0340790cb5b8352f644af96541ced7162bc"
+    },
+    "resource422": {
+      "path": "/kaggle/ext/torch_ckpt/adam_resource_age5_rank320/best.pt",
+      "sha256": "c80dc91bc881ca5331d5e52d272595e7a45472ecee51f16b68fe22052fc6c6bd"
+    }
+  },
+  "notes": [
+    "提出済み基準と開発で選んだ2候補だけを、公式full874〜999の未使用126網で一度ずつ評価する。",
+    "initial対照・深さ24で失敗した候補・rootの旧5段試作は最終候補に含めない。",
+    "優先候補の採否は事前条件に従う。別候補のholdout値を見た乗り換え・追加調整はしない。",
+    "GPU学習・照合は終了。最終評価はCPU32スレッド。実提出はユーザーが行う。"
+  ]
+}
