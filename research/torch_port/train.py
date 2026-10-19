@@ -11,6 +11,7 @@ W&B はオフライン(project arc-whitebox-adam)、チェックポイントは 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -255,11 +256,20 @@ def main():
             save(out / "best.pt", **torch.load(historical_best, map_location="cpu", weights_only=False))
         print("resumed", {k: state[k] for k in ("epoch", "step", "best", "best_epoch", "batch_in_epoch")}, flush=True)
 
+    init_ck = torch.load(a.init, map_location="cpu", weights_only=False) if a.init else None
+    init_provenance = ck.get("init_provenance") if ck is not None else None
+    if init_ck is not None:
+        init_provenance = dict(path=a.init, sha256=hashlib.sha256(Path(a.init).read_bytes()).hexdigest(),
+                               source_run=init_ck["args"]["run"],
+                               source_epoch=init_ck["state"]["epoch"],
+                               source_step=init_ck["state"]["step"],
+                               source_resources=init_ck.get("chain_config", resource_config()[1]),
+                               optimizer="new Adam; source optimizer state is not loaded")
     run = wandb.init(project="arc-whitebox-adam", name=a.run, id=a.run, resume="allow",
                      dir=os.environ.get("WANDB_DIR", "/kaggle/ext/wandb"),
                      config=dict({k: str(v) if isinstance(v, Path) else v for k, v in vars(a).items()},
                                  n_train=len(train), n_dev=len(dev_ds), chain_config=config_values,
-                                 schedule_total_steps=total, phase=phase,
+                                 schedule_total_steps=total, phase=phase, init_provenance=init_provenance,
                                  loss_scale=LOSS_SCALE, loss="final-layer MSE mean (+aux)"))
 
     def checkpoint(name):
@@ -267,6 +277,7 @@ def main():
              state=state, args={k: str(v) if isinstance(v, Path) else v for k, v in vars(a).items()},
              export=P.export(), train_gids=[gid for _, _, gid in train.items],
              chain_config=config_values, schedule_total_steps=total, phase=phase,
+             init_provenance=init_provenance,
              rng=dict(python=random.getstate(), numpy=np.random.get_state(),
                       torch=torch.get_rng_state(), cuda=torch.cuda.get_rng_state_all()))
 
@@ -280,13 +291,17 @@ def main():
         checkpoint("epoch_000.pt")
         if a.init:
             # 既定値で基準を測ってから、別の run の学習済みパラメータで始める(最適化器は新規)
-            P.load_state_dict(torch.load(a.init, map_location=dev, weights_only=False)["params"])
+            P.load_state_dict(init_ck["params"])
             init, _ = evaluate(P, dev_ds, a.val_bs, dev, cfg=cfg)
             state["init_mse"] = float(init.mean())
+            state["init_dev_mse"] = init.tolist()
             print(f"init {a.init} dev64 mse {init.mean():.4e}", flush=True)
             if init.mean() < state["best"]:
                 state["best"] = float(init.mean())
+                state["best_epoch"] = 0
                 checkpoint("best.pt")
+            checkpoint("initial.pt")
+            checkpoint("latest.pt")
     base = np.array(state["baseline"]["mse"])
 
     while state["epoch"] < a.epochs and state["bad"] < a.patience:
@@ -315,6 +330,12 @@ def main():
             it += 1
             if acc_n >= a.mb or bi == len(dl) - 1:
                 grads = [p.grad for g in groups for p in g["params"] if p.grad is not None]
+                # Preserve the mean-loss definition for a partial optimizer batch.
+                if acc_n != a.mb:
+                    factor = a.mb / acc_n
+                    for grad in grads:
+                        grad.mul_(factor)
+                    acc_loss *= factor
                 gnorm = float(torch.nn.utils.clip_grad_norm_(
                     [p for g in groups for p in g["params"]], a.clip))
                 if math.isfinite(gnorm):
