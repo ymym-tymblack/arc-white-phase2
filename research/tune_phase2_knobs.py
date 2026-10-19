@@ -42,7 +42,7 @@ DEV = "/kaggle/ext/full_dev64"
 STORE = Path("/kaggle/ext/optuna")
 CACHE = STORE / "tune_phase2_cache.jsonl"
 STUDY_DB = STORE / "tune_phase2.db"
-STUDY_NAME = "tune_phase2_v1"
+STUDY_NAME = "tune_phase2_v2"  # v1 は窓を含む探索域(窓が無関係と判明して中止、記録は sqlite に残す)
 RESULTS = ROOT / "results"
 B = 2**41
 OPS_LIMIT = 1.10  # 既定の op 数に対する上限(residual 時間の上限 0.4 s を守るため)
@@ -50,7 +50,11 @@ WALL_LIMIT = 1800.0  # 評価機の負荷で 120 s を超えても調整は続�
 
 KNOBS = ("window", "age_old", "rank_old", "iik_rank", "k3leg_rank", "kmax", "regen_p0",
          "regen_p1", "regen_p2", "regen_p3", "regen_feed", "k31_two_term", "learned_omega")
-SCAN_GRID = dict(age_old=(4, 5, 6, 7), rank_old=(128, 192, 256, 320), window=(12, 14, 16))
+SCAN_GRID = dict(age_old=(4, 5, 6, 7), rank_old=(128, 192, 256, 320), window=(16,))
+# 窓は若い家族の数の上限だが、若い家族は age_old で共有基底へ移り、共有基底の家族は捨てないので
+# age_old < window なら窓は効かない(輸送・読み出しが同じ演算列)。走査の窓 12/14 は確認用に
+# age_old=4 の 3 階数だけ評価する(予測が窓 16 と一致することの実測)。
+SCAN_WINDOW_CHECK = [dict(age_old=4, rank_old=r, window=w) for r in (128, 192, 256) for w in (12, 14)]
 
 
 # ---------------------------------------------------------------- worker
@@ -238,12 +242,13 @@ def wandb_run(phase: str, args, runner: Runner):
                                   workers=args.workers, threads=args.threads, args=vars(args)))
 
 
-def log_summary(run, step, s, prefix=""):
+def log_summary(run, number, s, prefix=""):
     if run is None:
         return
-    run.log({f"{prefix}{k}": s[k] for k in ("adj", "mse", "cb", "ops", "ratio_mean",
-                                            "ratio_of_means", "improved", "failures")
-             if s.get(k) is not None}, step=step)
+    row = {f"{prefix}{k}": s[k] for k in ("adj", "mse", "cb", "ops", "ratio_mean",
+                                          "ratio_of_means", "improved", "failures")
+           if s.get(k) is not None}
+    run.log(dict(row, **{f"{prefix}number": number}))
 
 
 # ---------------------------------------------------------------- phases
@@ -256,7 +261,7 @@ def phase_baseline(args, runner):
 
 def scan_configs():
     return [dict(age_old=a, rank_old=r, window=w) for a in SCAN_GRID["age_old"]
-            for r in SCAN_GRID["rank_old"] for w in SCAN_GRID["window"]]
+            for r in SCAN_GRID["rank_old"] for w in SCAN_GRID["window"]] + SCAN_WINDOW_CHECK
 
 
 def phase_scan(args, runner):
@@ -278,17 +283,18 @@ def phase_scan(args, runner):
         out.append(s)
         print(short(s), flush=True)
     save("scan", dict(candidate=str(runner.candidate), sha=runner.sha, indices=list(idxs),
-                      grid=SCAN_GRID, default=runner.summary({}, idxs), configs=out))
+                      grid=SCAN_GRID, window_check=SCAN_WINDOW_CHECK,
+                      default=runner.summary({}, idxs), configs=out))
     if run:
         run.finish()
 
 
 def suggest(trial, defaults) -> dict:
-    """既定値の周りの局所探索(試行1回が数十分かかるので、過去の走査で外れた域は除く)。"""
+    """既定値の周りの局所探索(試行1回が数十分かかるので、走査と v1 の打ち切りで外れた域は除く)。
+    窓は age_old < 16 では効かないので探索しない(既定 16 のまま)。"""
     kw = dict(
-        window=trial.suggest_int("window", 12, 16),
-        age_old=trial.suggest_int("age_old", 4, 8),
-        rank_old=trial.suggest_int("rank_old", 128, 320, step=32),
+        age_old=trial.suggest_int("age_old", 5, 8),
+        rank_old=trial.suggest_int("rank_old", 160, 320, step=32),
         iik_rank=trial.suggest_int("iik_rank", 2, 12, step=2),
         k3leg_rank=trial.suggest_int("k3leg_rank", 2, 12, step=2),
         kmax=trial.suggest_int("kmax", 2, 4),
@@ -311,7 +317,7 @@ def suggest(trial, defaults) -> dict:
 def to_params(kw: dict, defaults: dict) -> dict:
     """設定を Optuna の分布のパラメータ名へ(enqueue 用)。"""
     full = dict(defaults, **kw)
-    p = {k: full[k] for k in KNOBS if k != "k31_two_term"}
+    p = {k: full[k] for k in KNOBS if k not in ("k31_two_term", "window")}
     if not full["learned_omega"] or full["k31_two_term"] != 3.0:
         p["learned_omega"] = False
         p["k31_two_term"] = full["k31_two_term"]
@@ -367,7 +373,8 @@ def phase_optuna(args, runner):
         scan_path = RESULTS / "tune_phase2_scan.json"
         if scan_path.exists():
             scan = json.loads(scan_path.read_text())
-            for s in [s for s in scan["configs"] if feasible(s) and s["kwargs"]][:args.warm]:
+            for s in [s for s in scan["configs"] if feasible(s) and s["kwargs"]
+                      and "window" not in s["kwargs"]][:args.warm]:
                 study.enqueue_trial(to_params(s["kwargs"], runner.defaults))
     run = wandb_run("optuna", args, runner)
     finished = sum(t.state.is_finished() for t in study.trials)
@@ -447,6 +454,8 @@ def phase_report(args, runner):
         recommended_kwargs=best["kwargs"], recommended=best, default_dev64=final["default"],
         final_dev64=final["configs"], promote_dev32=promote["configs"],
         scan_dev8=scan["configs"], optuna_dev16=trial_records(study, runner),
+        optuna_v1_aborted=trial_records(optuna.load_study(
+            study_name="tune_phase2_v1", storage=f"sqlite:///{STUDY_DB}"), runner),
     )
     path = save("report", report)
     print(path)
