@@ -1,0 +1,39 @@
+{
+  "created_utc": "2026-10-19T05:20:00Z",
+  "purpose": "Strassen5段・Adamによる係数/補正器の当てはめ・Optunaのつまみ調整を、結果を見る前に固定した条件で一度だけ最終比較して採否を決める。",
+  "datasets": {
+    "train": {
+      "paths": ["/kaggle/ext/compute_full64", "/kaggle/ext/full_train", "/kaggle/ext/full_train2"],
+      "official_full_rows": "0-63, 264-423, 424-621",
+      "use": "Adamによる係数・補正器の当てはめ"
+    },
+    "development": {
+      "path": "/kaggle/ext/full_dev64",
+      "official_full_rows": "64-127",
+      "use": "早期終了・つまみの探索・候補選択"
+    },
+    "holdout": {
+      "path": "/kaggle/ext/full_holdout126",
+      "official_full_rows": "874-999",
+      "use": "凍結した候補ごとに一度だけ評価する。学習・探索・選択には使わない"
+    },
+    "retired": {
+      "path": "/kaggle/ext/full_final128",
+      "official_full_rows": "128-255",
+      "use": "前回の最終確認で使用済み。今回は使わない"
+    }
+  },
+  "baseline": "提出済みの統合版(research/frozen_phase2/combined.py、sha256 f13be0e5b38a53e78acf181642379fdcedac388ddde0bdb38ebe0dbfd9e8ac92)",
+  "candidates": "開発集合で選んだ最大2候補。凍結時にファイル・sha256・上書き属性を research/frozen_phase2_round2.json に記録する",
+  "metric": "ネットワークごとの調整後スコア = 最終層MSE × max(0.1, FLOP/2^41)。ネットワーク単位で対にして比べる",
+  "adoption_rules": [
+    "holdoutで基準に対する調整後スコアの対の平均比が1未満、ネットワーク単位ブートストラップ95%区間の上端が1未満、かつ6割以上のネットワークで改善",
+    "推定失敗(例外・予算超過・時間超過・非有限)が0件。評価は4プロセス×8スレッドで行い、時間超過が出た場合は実行環境を修正し失敗行のみ再評価する(履歴は保持)",
+    "静かな環境の1スレッド事前検査で、7形状すべて完走、幅1024・深さ16のresidualが0.35秒以下、最大RSSが6GiB以下",
+    "setupがクライアント/サーバー方式(公式4GiB配列上限)で5秒未満、予測がインプロセスと一致"
+  ],
+  "notes": [
+    "本番(非公開の新しいMLP)のスコアへの換算予測はしない",
+    "提出はユーザーが行う"
+  ]
+}
