@@ -10,6 +10,13 @@ what has landed on `main` since the last dated entry. Read it before you tune an
 
 ## Unreleased
 
+### 未使用126網での確認・提出用rootの採用（2026-10-19）
+
+- 凍結後の公式full874〜999で3ソース計378予測が完走し、失敗0。優先候補は提出済み版より平均adjusted scoreが5.2195%低下、116/126網で改善した。
+- 網ごとのscore比の平均0.94894619・対bootstrap95%区間[0.94231738, 0.95562123]で事前の採否条件を通過。holdoutを見た候補の入替はせず、この126網は消費済みとした。
+- `estimator.py` を凍結済みage5/rank320・422網epoch16版へbyte一致で切替。切替前のrootと採否記録を保存し、実提出・既存tar更新はしていない。
+- 切替後のroot自体もSDK validateとsubprocess runnerを通過（wall33.39661秒、residual0.32801秒、失敗0）。凍結候補と全16層MSE・FLOPsが一致し、全回帰テスト54件も通過した。
+
 ### 422網の再学習・安全化・最終候補凍結（2026-10-19）
 
 - 選択したage5/rank320だけをepoch19から新規Adamで422網に再学習し、epoch16を選択。元224網の継続実験と区別してcheckpoint・W&B・初期値の来歴を保存した。
