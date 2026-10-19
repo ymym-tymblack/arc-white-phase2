@@ -1,8 +1,8 @@
-"""凍結した候補を最終確認用の集合(公式 full128〜255)で一度だけ評価し、事前の採否条件を判定する。
+"""凍結した候補をプロトコル指定の最終確認集合で一度だけ評価する。
 
-提出物ではない。research/protocol_phase2_final.json の条件と、凍結記録
-research/frozen_phase2_final.json(候補のファイル・sha256・クラス属性の上書き)に従う。
-結果ファイルが既にあれば実行しない(最終確認用の集合は一度しか使わない)。
+提出物ではない。既定は前回のfinal128用。第2ラウンドは --protocol と
+--dataset-role holdout と --frozen を明示し、件数は固定metadataから読む。
+結果が既にあれば実行しない。成功行も失敗行も同一条件のcheckpointからのみ再開する。
   uv run python research/eval_final128.py --out results/final128_phase2.json
 """
 from __future__ import annotations
@@ -48,24 +48,31 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--frozen", type=Path, default=ROOT / "research/frozen_phase2_final.json")
+    parser.add_argument("--protocol", type=Path,
+                        default=ROOT / "research/protocol_phase2_final.json")
+    parser.add_argument("--dataset-role", choices=("final", "holdout"), default="final")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     if args.out.exists():
         raise SystemExit(f"{args.out} already exists: the final set is evaluated only once")
-    protocol = json.loads((ROOT / "research/protocol_phase2_final.json").read_text())
+    protocol = json.loads(args.protocol.read_text())
     frozen = json.loads(args.frozen.read_text())
-    final = protocol["datasets"]["final"]
+    final = protocol["datasets"][args.dataset_role]
     meta = Path(final["path"]) / "metadata.json"
     if hashlib.sha256(meta.read_bytes()).hexdigest() != final["metadata_sha256"]:
         raise SystemExit("final dataset metadata differs from the protocol")
+    metadata = json.loads(meta.read_text())
+    count = int(metadata["splits"]["full"]["n_mlps"])
+    if count < 1:
+        raise SystemExit("final dataset must contain at least one network")
     for spec in frozen["candidates"].values():
         digest = hashlib.sha256(Path(spec["path"]).read_bytes()).hexdigest()
         if digest != spec["sha256"]:
             raise SystemExit(f"frozen source changed: {spec['path']}")
     checkpoint = args.out.with_suffix(".jsonl")
-    identity = dict(frozen=frozen, protocol=protocol,
+    identity = dict(frozen=frozen, protocol=protocol, dataset_role=args.dataset_role,
                     execution=dict(workers=args.workers, threads=args.threads))
     saved = {}
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -85,13 +92,13 @@ def main():
     else:
         with checkpoint.open("x") as stream:
             stream.write(json.dumps(identity) + "\n")
-    ev = Evaluator(range(128), workers=args.workers, threads=args.threads,
+    ev = Evaluator(range(count), workers=args.workers, threads=args.threads,
                    dataset_source=final["path"], dataset_split="full")
     started = time.time()
     runs = {}
     for name, spec in frozen["candidates"].items():
         t = time.time()
-        pending = [i for i in range(128) if (name, i) not in saved]
+        pending = [i for i in range(count) if (name, i) not in saved]
         futures = {
             ev.pool.submit(_run_final, (spec["path"], spec.get("kwargs", {}), i)): i
             for i in pending
@@ -102,9 +109,9 @@ def main():
                 entry = dict(candidate=name, result=result)
                 stream.write(json.dumps(entry, allow_nan=False) + "\n")
             saved[(name, result["idx"])] = result
-            print(f"{name}: {sum((name, i) in saved for i in range(128))}/128"
+            print(f"{name}: {sum((name, i) in saved for i in range(count))}/{count}"
                   f" idx={result['idx']} {'FAILED' if 'error' in result else 'OK'}", flush=True)
-        per = [saved[(name, i)] for i in range(128)]
+        per = [saved[(name, i)] for i in range(count)]
         errors = [p for p in per if "error" in p]
         if errors:
             runs[name] = dict(failures=len(errors), errors=errors,
@@ -140,7 +147,8 @@ def main():
         )
         print(name, json.dumps(comparisons[name]), flush=True)
     ev.pool.shutdown()
-    record = dict(protocol=protocol, frozen=frozen, runs=runs, comparisons=comparisons,
+    record = dict(protocol=protocol, frozen=frozen, dataset_role=args.dataset_role,
+                  runs=runs, comparisons=comparisons,
                   execution=identity["execution"], wall_seconds=time.time() - started)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(record, indent=1) + "\n")

@@ -107,6 +107,9 @@ private実装ブロックだけを移す。学習値・資源配分が変われ�
 次の探索・学習・最終確認は `research/protocol_phase2_round2.json` に従う。
 公式full874〜999の126網は最終確認専用で、metadataのhashを事前に固定した。
 候補の優先順位は開発集合と安全検査だけで固定し、holdoutを見て入れ替えない。
+最終評価CLIは `--protocol`・`--dataset-role holdout`・`--frozen` を明示して使い、
+件数を固定metadataから読む（既定の過去128網へ誤って流さない）。
+round2 metadataとソースのhash検査を実際に通し、不一致ソースは予測開始前に拒否することを確認した。
 
 
 ## 2026-10-18 最終候補: 計算削減と鎖内ω補正

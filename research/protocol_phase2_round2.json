@@ -1,6 +1,6 @@
 {
   "created_utc": "2026-10-19T05:20:00Z",
-  "purpose": "Strassen5段・Adamによる係数/補正器の当てはめ・Optunaのつまみ調整を、結果を見る前に固定した条件で一度だけ最終比較して採否を決める。",
+  "purpose": "学習値固定のresidual低減、Adamの勾配・収束監査、係数固定の資源配分探索、有望配分の再学習を行い、開発集合で選択・凍結した候補を一度だけ未使用holdoutで確認する。",
   "datasets": {
     "train": {
       "paths": ["/kaggle/ext/compute_full64", "/kaggle/ext/full_train", "/kaggle/ext/full_train2"],
@@ -15,6 +15,7 @@
     "holdout": {
       "path": "/kaggle/ext/full_holdout126",
       "official_full_rows": "874-999",
+      "metadata_sha256": "d0f5951c117bc4d9643a268274c5e8d51180ccdb4a47e25d74aaf085b709b08f",
       "use": "凍結した候補ごとに一度だけ評価する。学習・探索・選択には使わない"
     },
     "retired": {
@@ -34,6 +35,7 @@
   ],
   "notes": [
     "本番(非公開の新しいMLP)のスコアへの換算予測はしない",
+    "優先候補は凍結時に開発adjusted scoreと安全検査で決め、holdoutを見て候補を入れ替えない",
     "提出はユーザーが行う"
   ]
 }
