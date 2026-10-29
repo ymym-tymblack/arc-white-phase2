@@ -1,10 +1,12 @@
-.PHONY: demo-cast demo-cast-headless install test lint help
+.PHONY: demo-cast demo-cast-headless install test lint help install-gh setup-github
 
 help:
 	@echo "Targets:"
 	@echo "  install              uv sync --group dev"
 	@echo "  test                 run pytest"
 	@echo "  lint                 run ruff check"
+	@echo "  install-gh           install GitHub CLI globally via Ubuntu/Debian apt"
+	@echo "  setup-github         install gh, sign in once, and configure Git authentication"
 	@echo "  demo-cast            record asciinema cast for README opener (needs a TTY)"
 	@echo "  demo-cast-headless   build the cast without a TTY (CI / agent sandboxes)"
 	@echo "                       SOURCE=. records this checkout instead of GitHub main"
@@ -17,6 +19,36 @@ test:
 
 lint:
 	uv run ruff check .
+
+# Ubuntu/Debian: add GitHub's signed apt repository and install gh system-wide.
+# Rewrites the source entry as one line, repairing a malformed entry from manual setup too.
+install-gh:
+	@command -v apt-get >/dev/null || { echo "install-gh requires Ubuntu/Debian (apt-get)" >&2; exit 1; }
+	@command -v curl >/dev/null || { echo "curl is required; install it with: sudo apt-get install curl" >&2; exit 1; }
+	@set -eu; \
+	  key_tmp=$$(mktemp); \
+	  trap 'rm -f "$$key_tmp"' EXIT; \
+	  curl -fsSL -o "$$key_tmp" https://cli.github.com/packages/githubcli-archive-keyring.gpg; \
+	  sudo install -d -m 0755 /etc/apt/keyrings; \
+	  sudo install -m 0644 "$$key_tmp" /etc/apt/keyrings/githubcli-archive-keyring.gpg; \
+	  printf 'deb [arch=%s signed-by=%s] %s stable main\n' \
+	    "$$(dpkg --print-architecture)" \
+	    "/etc/apt/keyrings/githubcli-archive-keyring.gpg" \
+	    "https://cli.github.com/packages" \
+	    | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null; \
+	  sudo apt-get update; \
+	  sudo apt-get install -y gh
+
+# Install gh, then authenticate via browser/device flow only if not already logged in.
+# gh stores credentials locally; setup-git makes Git use them for HTTPS remotes.
+setup-github: install-gh
+	@if gh auth status --hostname github.com >/dev/null 2>&1; then \
+	  echo "Already authenticated with github.com"; \
+	else \
+	  gh auth login --hostname github.com --git-protocol https --web; \
+	fi
+	@gh auth setup-git
+	@gh auth status --hostname github.com
 
 # Records a fresh-clone walkthrough cast and renders to GIF.
 # Sequence: git clone -> cd -> uv sync -> python estimator.py -> whest validate -> whest run (mini split)
